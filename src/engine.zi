@@ -270,15 +270,15 @@ FormatNumber :: (value: float64, out: *s8, cap: s32) {
     explen: s32 = 0
     mant: [32]s8
     if value != value {
-        FormatText(out, cast(u64)cap, CText("#NUM!"))
+        FormatText(out, cast(usize)cap, CText("#NUM!"))
         return
     }
     if value == 0 {
-        FormatText(out, cast(u64)cap, CText("0"))
+        FormatText(out, cast(usize)cap, CText("0"))
         return
     }
     if value == cast(float64)TruncateToS64(value) && value > -1e17 && value < 1e17 {
-        FormatText(out, cast(u64)cap, CText("%lld"), TruncateToS64(value))
+        FormatText(out, cast(usize)cap, CText("%lld"), TruncateToS64(value))
         return
     }
     while precision <= 17 {
@@ -316,10 +316,10 @@ FormatNumber :: (value: float64, out: *s8, cap: s32) {
         if decimals < 0 {
             decimals = 0
         }
-        FormatText(out, cast(u64)cap, CText("%.*f"), decimals, value)
+        FormatText(out, cast(usize)cap, CText("%.*f"), decimals, value)
         return
     }
-    FormatText(out, cast(u64)cap, CText("%.*e"), digits - 1, value)
+    FormatText(out, cast(usize)cap, CText("%.*e"), digits - 1, value)
     epos = -1
     i = 0
     while out[i] != 0 {
@@ -741,11 +741,11 @@ CoerceBool :: (v: *Val) -> s32 {
 
 CoerceText :: (v: *Val, out: *s8, cap: s32) {
     if v.kind == VAL_STRING {
-        FormatText(out, cast(u64)cap, CText("%s"), ifx v.text != null then v.text else CText(""))
+        FormatText(out, cast(usize)cap, CText("%s"), ifx v.text != null then v.text else CText(""))
         return
     }
     if v.kind == VAL_BOOL {
-        FormatText(out, cast(u64)cap, CText("%s"), ifx v.number != 0 then CText("TRUE") else CText("FALSE"))
+        FormatText(out, cast(usize)cap, CText("%s"), ifx v.number != 0 then CText("TRUE") else CText("FALSE"))
         return
     }
     if v.kind == VAL_FLOAT {
@@ -753,7 +753,7 @@ CoerceText :: (v: *Val, out: *s8, cap: s32) {
         return
     }
     if v.kind == VAL_ERROR {
-        FormatText(out, cast(u64)cap, CText("%s"), ErrText(v.err))
+        FormatText(out, cast(usize)cap, CText("%s"), ErrText(v.err))
         return
     }
     out[0] = 0
@@ -1495,17 +1495,17 @@ EvalCompare :: (st: *EvalState, text: *s8, pos: *s32) -> Val {
         truth: s32 = 0
         if op == {
             case 1;
-                truth = cast(s32)(cmp == 0)
+            truth = cast(s32)(cmp == 0)
             case 2;
-                truth = cast(s32)(cmp != 0)
+            truth = cast(s32)(cmp != 0)
             case 3;
-                truth = cast(s32)(cmp <= 0)
+            truth = cast(s32)(cmp <= 0)
             case 4;
-                truth = cast(s32)(cmp >= 0)
+            truth = cast(s32)(cmp >= 0)
             case 5;
-                truth = cast(s32)(cmp < 0)
+            truth = cast(s32)(cmp < 0)
             case;
-                truth = cast(s32)(cmp > 0)
+            truth = cast(s32)(cmp > 0)
         }
         st.pend_kind = 0
         left = ValBool(truth)
@@ -1519,11 +1519,11 @@ EvalExpression :: (st: *EvalState, text: *s8, pos: *s32) -> Val {
 
 WbCellValueText :: (v: *Val, out: *s8, cap: s32) {
     if v.kind == VAL_ERROR {
-        FormatText(out, cast(u64)cap, CText("%s"), ErrText(v.err))
+        FormatText(out, cast(usize)cap, CText("%s"), ErrText(v.err))
         return
     }
     if v.kind == VAL_BOOL {
-        FormatText(out, cast(u64)cap, CText("%s"), ifx v.number != 0 then CText("TRUE") else CText("FALSE"))
+        FormatText(out, cast(usize)cap, CText("%s"), ifx v.number != 0 then CText("TRUE") else CText("FALSE"))
         return
     }
     if v.kind == VAL_FLOAT {
@@ -1531,7 +1531,7 @@ WbCellValueText :: (v: *Val, out: *s8, cap: s32) {
         return
     }
     if v.kind == VAL_STRING {
-        FormatText(out, cast(u64)cap, CText("%s"), ifx v.text != null then v.text else CText(""))
+        FormatText(out, cast(usize)cap, CText("%s"), ifx v.text != null then v.text else CText(""))
         return
     }
     out[0] = 0
@@ -1546,7 +1546,7 @@ SerialToDateText :: (serial: s32, out: *s8, cap: s32) {
         days = serial + 1 + SerialEpoch()
     }
     CivilFromDays(days, *y, *m, *d)
-    FormatText(out, cast(u64)cap, CText("%04d/%02d/%02d"), y, m, d)
+    FormatText(out, cast(usize)cap, CText("%04d/%02d/%02d"), y, m, d)
 }
 
 SerialToTimeText :: (frac: float64, out: *s8, cap: s32) {
@@ -1555,7 +1555,7 @@ SerialToTimeText :: (frac: float64, out: *s8, cap: s32) {
         seconds += 86400
     }
     seconds = seconds % 86400
-    FormatText(out, cast(u64)cap, CText("%02d:%02d:%02d"), seconds / 3600, (seconds / 60) % 60, seconds % 60)
+    FormatText(out, cast(usize)cap, CText("%02d:%02d:%02d"), seconds / 3600, (seconds / 60) % 60, seconds % 60)
 }
 
 CellDisplayText :: (cell: *Cell, out: *s8, cap: s32) {
@@ -1572,10 +1572,10 @@ CellDisplayText :: (cell: *Cell, out: *s8, cap: s32) {
         dbuf: [32]s8
         SerialToDateText(TruncateToS32(cell.cached_number), *dbuf[0], 32)
         if (cell.cached_number - cast(float64)TruncateToS32(cell.cached_number)) == 0 {
-            FormatText(out, cast(u64)cap, CText("%s"), *dbuf[0])
+            FormatText(out, cast(usize)cap, CText("%s"), *dbuf[0])
             return
         }
-        FormatText(out, cast(u64)cap, CText("%s "), *dbuf[0])
+        FormatText(out, cast(usize)cap, CText("%s "), *dbuf[0])
         tfrac: float64 = cell.cached_number - cast(float64)TruncateToS32(cell.cached_number)
         total_ms: float64 = tfrac * 86400000.0
         ms: s32 = TruncateToS32(total_ms + 0.5)
@@ -1587,7 +1587,7 @@ CellDisplayText :: (cell: *Cell, out: *s8, cap: s32) {
             SerialToTimeText(tfrac, *out[TextLength(out)], cast(s32)(cast(u64)cap - TextLength(out)))
         } else {
             seconds2: s32 = ms / 1000
-            FormatText(*out[TextLength(out)], cast(u64)cap - TextLength(out), CText("%02d:%02d:%02d.%03d"), seconds2 / 3600, (seconds2 / 60) % 60, seconds2 % 60, ms % 1000)
+            FormatText(*out[TextLength(out)], cast(usize)(cast(u64)cap - TextLength(out)), CText("%02d:%02d:%02d.%03d"), seconds2 / 3600, (seconds2 / 60) % 60, seconds2 % 60, ms % 1000)
         }
         return
     }
@@ -2195,9 +2195,9 @@ RoundForDisplay :: (display: *s8, cap: s32) {
     }
     magnitude = ifx value < 0 then (-value) else value
     if magnitude >= 0.01 {
-        FormatText(display, cast(u64)cap, CText("%.2f"), value)
+        FormatText(display, cast(usize)cap, CText("%.2f"), value)
     } else if magnitude > 0 {
-        FormatText(display, cast(u64)cap, CText("%.2g"), value)
+        FormatText(display, cast(usize)cap, CText("%.2g"), value)
     }
 }
 
@@ -2978,7 +2978,7 @@ ConvertRadix :: (value: s64, from_base: s32, to_base: s32, out: *s8, cap: s32) -
         uv = cast(u64)value
     }
     if value == 0 {
-        FormatText(out, cast(u64)cap, CText("0"))
+        FormatText(out, cast(usize)cap, CText("0"))
         return 1
     }
     while uv != 0 && n < 70 {
@@ -6709,7 +6709,7 @@ FormatWithPattern :: (value: float64, fmt: *s8, out: *s8, cap: s32) {
     if comma {
         FormatThousands(*tmp[0], out, cap)
     } else {
-        FormatText(out, cast(u64)cap, CText("%s"), *tmp[0])
+        FormatText(out, cast(usize)cap, CText("%s"), *tmp[0])
     }
     if percent {
         len: s32 = cast(s32)TextLength(out)
@@ -12107,29 +12107,29 @@ PFuncInverter :: (which: s32, p: float64, shape: *float64, lower_tail: s32, log_
             m8: s32 = i % 8
             if m8 == {
                 case 0;
-                    x = xhigh - (xhigh - xlow) * (exhigh / (exhigh - exlow))
+                x = xhigh - (xhigh - xlow) * (exhigh / (exhigh - exlow))
                 case 4;
-                    if xlow >= 0 && xhigh >= 0 {
-                        xl2: float64 = xlow
-                        if xl2 < 2.2250738585072014e-308 {
-                            xl2 = 2.2250738585072014e-308
-                        }
-                        x = Sqrt(xl2) * Sqrt(xhigh)
-                    } else if xlow <= 0 && xhigh <= 0 {
-                        xh2: float64 = 0 - xhigh
-                        if xh2 < 2.2250738585072014e-308 {
-                            xh2 = 2.2250738585072014e-308
-                        }
-                        x = 0 - Sqrt(0 - xlow) * Sqrt(xh2)
-                    } else {
-                        x = 0
+                if xlow >= 0 && xhigh >= 0 {
+                    xl2: float64 = xlow
+                    if xl2 < 2.2250738585072014e-308 {
+                        xl2 = 2.2250738585072014e-308
                     }
+                    x = Sqrt(xl2) * Sqrt(xhigh)
+                } else if xlow <= 0 && xhigh <= 0 {
+                    xh2: float64 = 0 - xhigh
+                    if xh2 < 2.2250738585072014e-308 {
+                        xh2 = 2.2250738585072014e-308
+                    }
+                    x = 0 - Sqrt(0 - xlow) * Sqrt(xh2)
+                } else {
+                    x = 0
+                }
                 case 2;
-                    x = (xhigh + 1000 * xlow) / 1001
+                x = (xhigh + 1000 * xlow) / 1001
                 case 6;
-                    x = (1000 * xhigh + xlow) / 1001
+                x = (1000 * xhigh + xlow) / 1001
                 case;
-                    x = (xhigh + xlow) / 2
+                x = (xhigh + xlow) / 2
             }
         } else if have_xlow != 0 {
             x = ifx xlow < 1 then 1 else (cast(float64)(2 * i) * xlow)
@@ -15103,10 +15103,10 @@ FnTextjoin :: (st: *EvalState, args: *Val, count: s32, marks: *s32) -> Val {
         if piece[0] != 0 || ignore_empty == 0 {
             if !first {
                 n = cast(s32)TextLength(*out[0])
-                FormatText(*out[n], 2048 - cast(u64)n, CText("%s"), *delim[0])
+                FormatText(*out[n], cast(usize)(2048 - cast(u64)n), CText("%s"), *delim[0])
             }
             n = cast(s32)TextLength(*out[0])
-            FormatText(*out[n], 2048 - cast(u64)n, CText("%s"), *piece[0])
+            FormatText(*out[n], cast(usize)(2048 - cast(u64)n), CText("%s"), *piece[0])
             first = false
         }
         i += 1
@@ -15859,29 +15859,29 @@ CxToString :: (c: Cplx, unit: s32, out: *s8, cap: s32) {
     out[0] = 0
     if c.re != 0 || c.im == 0 {
         FormatNumber(c.re, *tmp[0], 64)
-        FormatText(out, cast(u64)cap, CText("%s"), *tmp[0])
+        FormatText(out, cast(usize)cap, CText("%s"), *tmp[0])
         have_real = true
     }
     if c.im != 0 {
         if c.im == 1 {
             if have_real {
                 n = cast(s32)TextLength(out)
-                FormatText(*out[n], cast(u64)(cap - n), CText("+"))
+                FormatText(*out[n], cast(usize)(cast(u64)(cap - n)), CText("+"))
             }
         } else if c.im == -1 {
             n = cast(s32)TextLength(out)
-            FormatText(*out[n], cast(u64)(cap - n), CText("-"))
+            FormatText(*out[n], cast(usize)(cast(u64)(cap - n)), CText("-"))
         } else {
             FormatNumber(c.im, *tmp[0], 64)
             n = cast(s32)TextLength(out)
             if have_real && tmp[0] != 45 && tmp[0] != 43 {
                 if c.im >= 0 {
-                    FormatText(*out[n], cast(u64)(cap - n), CText("+%s"), *tmp[0])
+                    FormatText(*out[n], cast(usize)(cast(u64)(cap - n)), CText("+%s"), *tmp[0])
                 } else {
-                    FormatText(*out[n], cast(u64)(cap - n), CText("%s"), *tmp[0])
+                    FormatText(*out[n], cast(usize)(cast(u64)(cap - n)), CText("%s"), *tmp[0])
                 }
             } else {
-                FormatText(*out[n], cast(u64)(cap - n), CText("%s"), *tmp[0])
+                FormatText(*out[n], cast(usize)(cast(u64)(cap - n)), CText("%s"), *tmp[0])
             }
         }
         n = cast(s32)TextLength(out)
@@ -24120,39 +24120,39 @@ NtFactorEach :: (n_in: float64, mode: s32, out: *u64) -> s32 {
             if vv != 0 {
                 if mode == {
                     case 0;
-                        out[0] *= cast(u64)(vv + 1)
+                    out[0] *= cast(u64)(vv + 1)
                     case 1;
-                        pv: u64 = 1
-                        k2: s32 = 0
-                        while k2 < vv {
-                            pv *= pp
-                            k2 += 1
-                        }
-                        if vv == 1 {
-                            out[0] *= pp + 1
-                        } else {
-                            sv: u64 = (pv - 1) / (pp - 1)
-                            out[0] *= sv * pp + 1
-                        }
+                    pv: u64 = 1
+                    k2: s32 = 0
+                    while k2 < vv {
+                        pv *= pp
+                        k2 += 1
+                    }
+                    if vv == 1 {
+                        out[0] *= pp + 1
+                    } else {
+                        sv: u64 = (pv - 1) / (pp - 1)
+                        out[0] *= sv * pp + 1
+                    }
                     case 2;
-                        pv2: u64 = 1
-                        k3: s32 = 0
-                        while k3 < (vv - 1) {
-                            pv2 *= pp
-                            k3 += 1
-                        }
-                        out[0] *= pv2 * (pp - 1)
+                    pv2: u64 = 1
+                    k3: s32 = 0
+                    while k3 < (vv - 1) {
+                        pv2 *= pp
+                        k3 += 1
+                    }
+                    out[0] *= pv2 * (pp - 1)
                     case 3;
-                        out[0] *= pp
+                    out[0] *= pp
                     case 4;
-                        if vv >= 2 {
-                            out[0] = 1
-                            mu_val = 0
-                        } else {
-                            mu_val = 0 - mu_val
-                        }
+                    if vv >= 2 {
+                        out[0] = 1
+                        mu_val = 0
+                    } else {
+                        mu_val = 0 - mu_val
+                    }
                     case 5;
-                        out[0] += 1
+                    out[0] += 1
                 }
             }
             ip2 += 1
@@ -25381,42 +25381,42 @@ IntlWeekendDecode :: (args: *Val, count: s32, weekend_index: s32, weekends: *s32
         id: s32 = TruncateToS32(CoerceNumber(v))
         if id == {
             case 1;
-                weekends[6] = 1
-                weekends[0] = 1
+            weekends[6] = 1
+            weekends[0] = 1
             case 2;
-                weekends[0] = 1
-                weekends[1] = 1
+            weekends[0] = 1
+            weekends[1] = 1
             case 3;
-                weekends[1] = 1
-                weekends[2] = 1
+            weekends[1] = 1
+            weekends[2] = 1
             case 4;
-                weekends[2] = 1
-                weekends[3] = 1
+            weekends[2] = 1
+            weekends[3] = 1
             case 5;
-                weekends[3] = 1
-                weekends[4] = 1
+            weekends[3] = 1
+            weekends[4] = 1
             case 6;
-                weekends[4] = 1
-                weekends[5] = 1
+            weekends[4] = 1
+            weekends[5] = 1
             case 7;
-                weekends[5] = 1
-                weekends[6] = 1
+            weekends[5] = 1
+            weekends[6] = 1
             case 11;
-                weekends[0] = 1
+            weekends[0] = 1
             case 12;
-                weekends[1] = 1
+            weekends[1] = 1
             case 13;
-                weekends[2] = 1
+            weekends[2] = 1
             case 14;
-                weekends[3] = 1
+            weekends[3] = 1
             case 15;
-                weekends[4] = 1
+            weekends[4] = 1
             case 16;
-                weekends[5] = 1
+            weekends[5] = 1
             case 17;
-                weekends[6] = 1
+            weekends[6] = 1
             case;
-                return 0
+            return 0
         }
     } else if v.kind == VAL_STRING {
         sbuf: [32]s8
@@ -28785,6 +28785,19 @@ WorkbookLoadFile :: (wb: *Workbook, path: *s8) -> s32 {
         return ok
     }
     if document || (!csv && (first[0] == 60 || GzipIs(bytes, cast(u64)size) != 0)) {
+        if !NativeReady() {
+            text: *u8 = bytes
+            inflated: u64 = 0
+            if GzipIs(bytes, cast(u64)size) != 0 {
+                text = GzipDecompress(bytes, cast(u64)size, *inflated)
+            }
+            ok: s32 = 0
+            if text != null { ok = ParseGnumericXml(wb, cast(*s8)text) }
+            if text != bytes { MemoryFree(cast(*void)text) }
+            FreeFileBytes(bytes)
+            if ok != 0 { WorkbookEvaluate(wb) }
+            return ok
+        }
         // Pass the original bytes and their length to Gnumeric: it handles
         // compression, XML encodings, namespaces and shared expressions.
         view: *void = NativeReadDocument(bytes, cast(s64)size, path)

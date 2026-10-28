@@ -9,27 +9,37 @@ libm :: #system_library "m";
 
 // ------------------------------------------------------------------ memory
 
-MemoryAllocate :: (size: u64) -> *void #foreign libc "malloc";
-MemoryAllocateZeroed :: (count: u64, size: u64) -> *void #foreign libc "calloc";
-MemoryResize :: (block: *void, size: u64) -> *void #foreign libc "realloc";
+AbiMemoryAllocate :: (size: usize) -> *void #foreign libc "malloc";
+MemoryAllocate :: (size: u64) -> *void { return AbiMemoryAllocate(cast(usize)size) }
+AbiMemoryAllocateZeroed :: (count: usize, size: usize) -> *void #foreign libc "calloc";
+MemoryAllocateZeroed :: (count: u64, size: u64) -> *void { return AbiMemoryAllocateZeroed(cast(usize)count, cast(usize)size) }
+AbiMemoryResize :: (block: *void, size: usize) -> *void #foreign libc "realloc";
+MemoryResize :: (block: *void, size: u64) -> *void { return AbiMemoryResize(block, cast(usize)size) }
 MemoryFree :: (block: *void) #foreign libc "free";
-MemoryCopy :: (destination: *void, source: *void, count: u64) -> *void #foreign libc "memcpy";
-MemoryMove :: (destination: *void, source: *void, count: u64) -> *void #foreign libc "memmove";
-MemorySet :: (destination: *void, value: s32, count: u64) -> *void #foreign libc "memset";
+AbiMemoryCopy :: (destination: *void, source: *void, count: usize) -> *void #foreign libc "memcpy";
+MemoryCopy :: (destination: *void, source: *void, count: u64) -> *void { return AbiMemoryCopy(destination, source, cast(usize)count) }
+AbiMemoryMove :: (destination: *void, source: *void, count: usize) -> *void #foreign libc "memmove";
+MemoryMove :: (destination: *void, source: *void, count: u64) -> *void { return AbiMemoryMove(destination, source, cast(usize)count) }
+AbiMemorySet :: (destination: *void, value: s32, count: usize) -> *void #foreign libc "memset";
+MemorySet :: (destination: *void, value: s32, count: u64) -> *void { return AbiMemorySet(destination, value, cast(usize)count) }
 
 // ------------------------------------------------------------------- text
 
-TextLength :: (text: *s8) -> u64 #foreign libc "strlen";
+AbiTextLength :: (text: *s8) -> usize #foreign libc "strlen";
+TextLength :: (text: *s8) -> u64 { return cast(u64)AbiTextLength(text) }
 TextCompare :: (left: *s8, right: *s8) -> s32 #foreign libc "strcmp";
-TextCompareN :: (left: *s8, right: *s8, count: u64) -> s32 #foreign libc "strncmp";
+AbiTextCompareN :: (left: *s8, right: *s8, count: usize) -> s32 #foreign libc "strncmp";
+TextCompareN :: (left: *s8, right: *s8, count: u64) -> s32 { return AbiTextCompareN(left, right, cast(usize)count) }
 TextCompareFold :: (left: *s8, right: *s8) -> s32 #foreign libc "strcasecmp";
-TextCompareFoldN :: (left: *s8, right: *s8, count: u64) -> s32 #foreign libc "strncasecmp";
+AbiTextCompareFoldN :: (left: *s8, right: *s8, count: usize) -> s32 #foreign libc "strncasecmp";
+TextCompareFoldN :: (left: *s8, right: *s8, count: u64) -> s32 { return AbiTextCompareFoldN(left, right, cast(usize)count) }
 TextFind :: (haystack: *s8, needle: *s8) -> *s8 #foreign libc "strstr";
 TextFindByte :: (text: *s8, byte: s32) -> *s8 #foreign libc "strchr";
 TextAppend :: (destination: *s8, source: *s8) -> *s8 #foreign libc "strcat";
-FormatText :: (output: *s8, capacity: u64, format: *s8, args: ..any) -> s32 #foreign libc "snprintf";
+FormatText :: (output: *s8, capacity: usize, format: *s8, args: ..any) -> s32 #foreign libc "snprintf";
 ParseDouble :: (text: *s8, end: **s8) -> float64 #foreign libc "strtod";
-ParseLong :: (text: *s8, end: **s8, base: s32) -> s64 #foreign libc "strtol";
+AbiParseLong :: (text: *s8, end: **s8, base: s32) -> isize #foreign libc "strtol";
+ParseLong :: (text: *s8, end: **s8, base: s32) -> s64 { return cast(s64)AbiParseLong(text, end, base) }
 ParseLongLong :: (text: *s8, end: **s8, base: s32) -> s64 #foreign libc "strtoll";
 EnvironmentValue :: (name: *s8) -> *s8 #foreign libc "getenv";
 
@@ -238,7 +248,8 @@ RegexMatch :: struct {
 
 #scope_module
 RegexCompile :: (pattern: *RegexPattern, text: *s8, flags: s32) -> s32 #foreign libc "regcomp";
-RegexExecute :: (pattern: *RegexPattern, text: *s8, match_count: u64, matches: *RegexMatch, flags: s32) -> s32 #foreign libc "regexec";
+AbiRegexExecute :: (pattern: *RegexPattern, text: *s8, match_count: usize, matches: *RegexMatch, flags: s32) -> s32 #foreign libc "regexec";
+RegexExecute :: (pattern: *RegexPattern, text: *s8, match_count: u64, matches: *RegexMatch, flags: s32) -> s32 { return AbiRegexExecute(pattern, text, cast(usize)match_count, matches, flags) }
 RegexFree :: (pattern: *RegexPattern) #foreign libc "regfree";
 
 // ------------------------------------------------------------------- time
@@ -254,13 +265,30 @@ CalendarTime :: struct {
     tm_wday: s32
     tm_yday: s32
     tm_isdst: s32
-    tm_gmtoff: s64
+    tm_gmtoff: isize
     tm_zone: *s8
 }
 
 #scope_module
-CurrentTime :: (result: *s64) -> s64 #foreign libc "time";
-LocalTime :: (time: *s64) -> *CalendarTime #foreign libc "localtime";
+#if #defined(ANDROID_BUILD) {
+    // bionic time_t is long (32 bits on ARM32); Emscripten uses 64 bits.
+    AndroidTime :: (result: *isize) -> isize #foreign libc "time";
+    AndroidLocalTime :: (time: *isize) -> *CalendarTime #foreign libc "localtime";
+    #scope_export
+    CurrentTime :: (result: *s64) -> s64 {
+        value := cast(s64)AndroidTime(null)
+        if result != null { result.* = value }
+        return value
+    }
+    LocalTime :: (time: *s64) -> *CalendarTime {
+        value := cast(isize)time.*
+        return AndroidLocalTime(*value)
+    }
+    #scope_module
+} else {
+    CurrentTime :: (result: *s64) -> s64 #foreign libc "time";
+    LocalTime :: (time: *s64) -> *CalendarTime #foreign libc "localtime";
+}
 
 // ------------------------------------------------------------------ files
 
@@ -310,10 +338,14 @@ WriteFileText :: (path: *s8, text: *s8) -> bool {
 
 OpenFile :: (path: *s8, mode: *s8) -> *void #foreign libc "fopen";
 CloseFile :: (file: *void) -> s32 #foreign libc "fclose";
-SeekFile :: (file: *void, offset: s64, origin: s32) -> s32 #foreign libc "fseek";
-TellFile :: (file: *void) -> s64 #foreign libc "ftell";
-ReadFile :: (output: *void, size: u64, count: u64, file: *void) -> u64 #foreign libc "fread";
-WriteFile :: (input: *void, size: u64, count: u64, file: *void) -> u64 #foreign libc "fwrite";
+AbiSeekFile :: (file: *void, offset: isize, origin: s32) -> s32 #foreign libc "fseek";
+SeekFile :: (file: *void, offset: s64, origin: s32) -> s32 { return AbiSeekFile(file, cast(isize)offset, origin) }
+AbiTellFile :: (file: *void) -> isize #foreign libc "ftell";
+TellFile :: (file: *void) -> s64 { return cast(s64)AbiTellFile(file) }
+AbiReadFile :: (output: *void, size: usize, count: usize, file: *void) -> usize #foreign libc "fread";
+ReadFile :: (output: *void, size: u64, count: u64, file: *void) -> u64 { return cast(u64)AbiReadFile(output, cast(usize)size, cast(usize)count, file) }
+AbiWriteFile :: (input: *void, size: usize, count: usize, file: *void) -> usize #foreign libc "fwrite";
+WriteFile :: (input: *void, size: u64, count: u64, file: *void) -> u64 { return cast(u64)AbiWriteFile(input, cast(usize)size, cast(usize)count, file) }
 
 float_zero: float64 = 0.0;
 

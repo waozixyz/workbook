@@ -51,6 +51,16 @@ main :: () -> s32 {
     Check(Contains(Service.Call(*other, *other_files, "{\"op\":\"info\",\"id\":1}"), "\"ok\":false"), "IDs are local to their app")
     unused Service.Call(*context, *files, "{\"op\":\"load\",\"id\":3,\"name\":\"missing.gnumeric\"}")
     Check(files.status == 0, "missing document status is distinct")
-    Say("spreadsheet service: formulas, clone, native save/reload and private paths passed")
+    loaded = Service.Call(*context, *files, "{\"op\":\"view\",\"id\":3}")
+    Check(Contains(loaded, "=A1*224"), "failed load preserves the open document")
+    Check(Files.AppFileWrite(*files, "invalid.gnumeric", "not a spreadsheet"), "write invalid fixture")
+    Check(Contains(Service.Call(*context, *files, "{\"op\":\"load\",\"id\":3,\"name\":\"invalid.gnumeric\"}"), "\"ok\":false"), "invalid document rejected")
+    loaded = Service.Call(*context, *files, "{\"op\":\"view\",\"id\":3}")
+    Check(Contains(loaded, "=A1*224"), "invalid import preserves cells")
+    unused Good("{\"op\":\"add-sheet\",\"id\":1,\"text\":\"Second\"}")
+    unused Good("{\"op\":\"set\",\"id\":1,\"sheet\":1,\"text\":\"=SUM(Sheet1!A1:B1)\"}")
+    unused Good("{\"op\":\"evaluate\",\"id\":1}")
+    Check(Contains(Service.Call(*context, *files, "{\"op\":\"view\",\"id\":1,\"sheet\":1}"), "36"), "cross-sheet formula")
+    Say("spreadsheet service: calculation, clone, save/reload, failed imports and private paths passed")
     return 0
 }

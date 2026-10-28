@@ -156,11 +156,18 @@ git. `workbook.example.json` is safe sample data for demos.
 `make bundle` builds `build/workbook.zib`, the spreadsheet editor for a host
 with the `spreadsheet.v1` capability. Werkzeug on Linux includes the native
 calculation service and keeps Workbook documents in its own private folder.
-The bundle has the same compact grid, bottom sheet tabs and editing commands
+The bundle runs in Werkzeug on Linux, Android and the web, with the same compact grid, bottom sheet tabs and editing commands
 as the desktop editor. Its File menu imports and exports documents with the
-system chooser; imported source files stay unchanged. File → Download
-Workbook.zib saves the actual app bundle. Open that file with Werkzeug, or
-run `werk --bundle /path/to/workbook.zib`.
+system chooser on Linux and Android, or a browser upload and download;
+imported source files stay unchanged. On narrow screens the toolbar includes
+arrow controls for navigating cells without a keyboard. Linux and the web
+also offer File → Download Workbook.zx to save the app bundle.
+
+Android and browser hosts use Workbook's built-in calculation engine and
+save portable Gnumeric documents containing sheets, cell values and formulas.
+The Linux host also uses Gnumeric for imported documents, preserving their
+additional formatting and document features. Charts, styles and other native
+Gnumeric document metadata are not preserved by the built-in document reader.
 
 The native menu bar contains File, Edit, View, Insert and Sheet. Ctrl+O opens
 a document, Ctrl+Shift+S saves a copy, and F10 or Alt+F focuses the menus.

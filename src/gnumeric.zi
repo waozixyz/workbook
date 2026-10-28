@@ -126,81 +126,87 @@ NativeResolve :: (slot: *void, name: string) -> bool {
 
 #scope_export
 NativeReady :: () -> bool {
-    if native_tried { return native_ready }
-    native_tried = true
-    native_library = NativeOpenLibrary(CText("libspreadsheet.so"), 1)
-    if native_library == null { return false }
-    ok: bool = true
-    ok = ok && NativeResolve(cast(*void)*native_pre_init, "gnm_pre_parse_init")
-    ok = ok && NativeResolve(cast(*void)*native_initialize, "gnm_init")
-    ok = ok && NativeResolve(cast(*void)*native_new_context, "gnm_cmd_context_stderr_new")
-    ok = ok && NativeResolve(cast(*void)*native_plugins_init, "gnm_plugins_init")
-    ok = ok && NativeResolve(cast(*void)*native_plugins, "go_plugins_get_available_plugins")
-    ok = ok && NativeResolve(cast(*void)*native_activate, "go_plugin_db_activate_plugin_list")
-    ok = ok && NativeResolve(cast(*void)*native_error_free, "go_error_info_free")
-    ok = ok && NativeResolve(cast(*void)*native_new_io, "go_io_context_new")
-    ok = ok && NativeResolve(cast(*void)*native_io_failed, "go_io_error_occurred")
-    ok = ok && NativeResolve(cast(*void)*native_release, "g_object_unref")
-    ok = ok && NativeResolve(cast(*void)*native_free, "g_free")
-    ok = ok && NativeResolve(cast(*void)*native_get_name, "g_object_get")
-    ok = ok && NativeResolve(cast(*void)*native_array_release, "g_ptr_array_unref")
-    ok = ok && NativeResolve(cast(*void)*native_input_memory, "gsf_input_memory_new")
-    ok = ok && NativeResolve(cast(*void)*native_read, "workbook_view_new_from_input")
-    ok = ok && NativeResolve(cast(*void)*native_book, "wb_view_get_workbook")
-    ok = ok && NativeResolve(cast(*void)*native_sheet_count, "workbook_sheet_count")
-    ok = ok && NativeResolve(cast(*void)*native_sheet, "workbook_sheet_by_index")
-    ok = ok && NativeResolve(cast(*void)*native_positions, "sheet_cell_positions")
-    ok = ok && NativeResolve(cast(*void)*native_cell, "sheet_cell_get")
-    ok = ok && NativeResolve(cast(*void)*native_fetch, "sheet_cell_fetch")
-    ok = ok && NativeResolve(cast(*void)*native_source, "gnm_cell_get_entered_text")
-    ok = ok && NativeResolve(cast(*void)*native_display, "gnm_cell_get_rendered_text")
-    ok = ok && NativeResolve(cast(*void)*native_value, "gnm_cell_get_value")
-    ok = ok && NativeResolve(cast(*void)*native_value_type, "value_type_of")
-    ok = ok && NativeResolve(cast(*void)*native_number, "value_get_as_float")
-    ok = ok && NativeResolve(cast(*void)*native_value_text, "value_get_as_string")
-    ok = ok && NativeResolve(cast(*void)*native_recalculate, "workbook_recalc_all")
-    ok = ok && NativeResolve(cast(*void)*native_set_text, "sheet_cell_set_text")
-    ok = ok && NativeResolve(cast(*void)*native_remove, "sheet_cell_remove")
-    ok = ok && NativeResolve(cast(*void)*native_array_cell, "gnm_cell_is_nonsingleton_array")
-    ok = ok && NativeResolve(cast(*void)*native_insert_rows, "sheet_insert_rows")
-    ok = ok && NativeResolve(cast(*void)*native_delete_rows, "sheet_delete_rows")
-    ok = ok && NativeResolve(cast(*void)*native_insert_cols, "sheet_insert_cols")
-    ok = ok && NativeResolve(cast(*void)*native_delete_cols, "sheet_delete_cols")
-    ok = ok && NativeResolve(cast(*void)*native_saver, "go_file_saver_for_id")
-    ok = ok && NativeResolve(cast(*void)*native_output_file, "gsf_output_stdio_new")
-    ok = ok && NativeResolve(cast(*void)*native_output_memory, "gsf_output_memory_new")
-    ok = ok && NativeResolve(cast(*void)*native_output_size, "gsf_output_size")
-    ok = ok && NativeResolve(cast(*void)*native_output_bytes, "gsf_output_memory_get_bytes")
-    ok = ok && NativeResolve(cast(*void)*native_output_closed, "gsf_output_is_closed")
-    ok = ok && NativeResolve(cast(*void)*native_output_close, "gsf_output_close")
-    ok = ok && NativeResolve(cast(*void)*native_write, "workbook_view_save_to_output")
-    ok = ok && NativeResolve(cast(*void)*native_current_sheet, "wb_view_cur_sheet")
-    ok = ok && NativeResolve(cast(*void)*native_focus_sheet, "wb_view_sheet_focus")
-    ok = ok && NativeResolve(cast(*void)*native_error_release, "g_error_free")
-    ok = ok && NativeResolve(cast(*void)*native_opener, "go_file_opener_for_id")
-    ok = ok && NativeResolve(cast(*void)*native_canonical_path, "g_canonicalize_filename")
-    ok = ok && NativeResolve(cast(*void)*native_filename_uri, "g_filename_to_uri")
-    ok = ok && NativeResolve(cast(*void)*native_document_uri, "go_doc_get_uri")
-    if !ok { return false }
-    argv: [2]*s8
-    argv[0] = CText("workbook")
-    // Gnumeric's start-up adopts the user's locale. Restore Workbook's
-    // afterwards, so a decimal comma never reaches its number parser or display.
-    saved: [256]s8
-    current := NativeSetLocale(NATIVE_LC_ALL, null)
-    kept := current != null && TextLength(current) < 256
-    if kept { unused MemoryCopy(cast(*void)*saved[0], cast(*void)current, TextLength(current) + 1) }
-    unused native_pre_init(1, *argv[0])
-    native_initialize()
-    native_context = native_new_context()
-    native_plugins_init(native_context)
-    error: *void
-    native_activate(native_plugins(), *error)
-    // Optional plugin activation failures do not disable the core reader.
-    if error != null { native_error_free(error) }
-    if kept { unused NativeSetLocale(NATIVE_LC_ALL, *saved[0]) }
-    native_ready = true
-    return true
+    #if #defined(ANDROID_BUILD) || #defined(PLATFORM_WEB) || #defined(WORKBOOK_PORTABLE) {
+        // These hosts use Workbook's own calculation and document engine.
+        // Never try to load a desktop library on a phone or in the browser.
+        return false
+    } else {
+        if native_tried { return native_ready }
+        native_tried = true
+        native_library = NativeOpenLibrary(CText("libspreadsheet.so"), 1)
+        if native_library == null { return false }
+        ok: bool = true
+        ok = ok && NativeResolve(cast(*void)*native_pre_init, "gnm_pre_parse_init")
+        ok = ok && NativeResolve(cast(*void)*native_initialize, "gnm_init")
+        ok = ok && NativeResolve(cast(*void)*native_new_context, "gnm_cmd_context_stderr_new")
+        ok = ok && NativeResolve(cast(*void)*native_plugins_init, "gnm_plugins_init")
+        ok = ok && NativeResolve(cast(*void)*native_plugins, "go_plugins_get_available_plugins")
+        ok = ok && NativeResolve(cast(*void)*native_activate, "go_plugin_db_activate_plugin_list")
+        ok = ok && NativeResolve(cast(*void)*native_error_free, "go_error_info_free")
+        ok = ok && NativeResolve(cast(*void)*native_new_io, "go_io_context_new")
+        ok = ok && NativeResolve(cast(*void)*native_io_failed, "go_io_error_occurred")
+        ok = ok && NativeResolve(cast(*void)*native_release, "g_object_unref")
+        ok = ok && NativeResolve(cast(*void)*native_free, "g_free")
+        ok = ok && NativeResolve(cast(*void)*native_get_name, "g_object_get")
+        ok = ok && NativeResolve(cast(*void)*native_array_release, "g_ptr_array_unref")
+        ok = ok && NativeResolve(cast(*void)*native_input_memory, "gsf_input_memory_new")
+        ok = ok && NativeResolve(cast(*void)*native_read, "workbook_view_new_from_input")
+        ok = ok && NativeResolve(cast(*void)*native_book, "wb_view_get_workbook")
+        ok = ok && NativeResolve(cast(*void)*native_sheet_count, "workbook_sheet_count")
+        ok = ok && NativeResolve(cast(*void)*native_sheet, "workbook_sheet_by_index")
+        ok = ok && NativeResolve(cast(*void)*native_positions, "sheet_cell_positions")
+        ok = ok && NativeResolve(cast(*void)*native_cell, "sheet_cell_get")
+        ok = ok && NativeResolve(cast(*void)*native_fetch, "sheet_cell_fetch")
+        ok = ok && NativeResolve(cast(*void)*native_source, "gnm_cell_get_entered_text")
+        ok = ok && NativeResolve(cast(*void)*native_display, "gnm_cell_get_rendered_text")
+        ok = ok && NativeResolve(cast(*void)*native_value, "gnm_cell_get_value")
+        ok = ok && NativeResolve(cast(*void)*native_value_type, "value_type_of")
+        ok = ok && NativeResolve(cast(*void)*native_number, "value_get_as_float")
+        ok = ok && NativeResolve(cast(*void)*native_value_text, "value_get_as_string")
+        ok = ok && NativeResolve(cast(*void)*native_recalculate, "workbook_recalc_all")
+        ok = ok && NativeResolve(cast(*void)*native_set_text, "sheet_cell_set_text")
+        ok = ok && NativeResolve(cast(*void)*native_remove, "sheet_cell_remove")
+        ok = ok && NativeResolve(cast(*void)*native_array_cell, "gnm_cell_is_nonsingleton_array")
+        ok = ok && NativeResolve(cast(*void)*native_insert_rows, "sheet_insert_rows")
+        ok = ok && NativeResolve(cast(*void)*native_delete_rows, "sheet_delete_rows")
+        ok = ok && NativeResolve(cast(*void)*native_insert_cols, "sheet_insert_cols")
+        ok = ok && NativeResolve(cast(*void)*native_delete_cols, "sheet_delete_cols")
+        ok = ok && NativeResolve(cast(*void)*native_saver, "go_file_saver_for_id")
+        ok = ok && NativeResolve(cast(*void)*native_output_file, "gsf_output_stdio_new")
+        ok = ok && NativeResolve(cast(*void)*native_output_memory, "gsf_output_memory_new")
+        ok = ok && NativeResolve(cast(*void)*native_output_size, "gsf_output_size")
+        ok = ok && NativeResolve(cast(*void)*native_output_bytes, "gsf_output_memory_get_bytes")
+        ok = ok && NativeResolve(cast(*void)*native_output_closed, "gsf_output_is_closed")
+        ok = ok && NativeResolve(cast(*void)*native_output_close, "gsf_output_close")
+        ok = ok && NativeResolve(cast(*void)*native_write, "workbook_view_save_to_output")
+        ok = ok && NativeResolve(cast(*void)*native_current_sheet, "wb_view_cur_sheet")
+        ok = ok && NativeResolve(cast(*void)*native_focus_sheet, "wb_view_sheet_focus")
+        ok = ok && NativeResolve(cast(*void)*native_error_release, "g_error_free")
+        ok = ok && NativeResolve(cast(*void)*native_opener, "go_file_opener_for_id")
+        ok = ok && NativeResolve(cast(*void)*native_canonical_path, "g_canonicalize_filename")
+        ok = ok && NativeResolve(cast(*void)*native_filename_uri, "g_filename_to_uri")
+        ok = ok && NativeResolve(cast(*void)*native_document_uri, "go_doc_get_uri")
+        if !ok { return false }
+        argv: [2]*s8
+        argv[0] = CText("workbook")
+        // Gnumeric's start-up adopts the user's locale. Restore Workbook's
+        // afterwards, so a decimal comma never reaches its number parser or display.
+        saved: [256]s8
+        current := NativeSetLocale(NATIVE_LC_ALL, null)
+        kept := current != null && TextLength(current) < 256
+        if kept { unused MemoryCopy(cast(*void)*saved[0], cast(*void)current, TextLength(current) + 1) }
+        unused native_pre_init(1, *argv[0])
+        native_initialize()
+        native_context = native_new_context()
+        native_plugins_init(native_context)
+        error: *void
+        native_activate(native_plugins(), *error)
+        // Optional plugin activation failures do not disable the core reader.
+        if error != null { native_error_free(error) }
+        if kept { unused NativeSetLocale(NATIVE_LC_ALL, *saved[0]) }
+        native_ready = true
+        return true
+    }
 }
 
 NativeRead :: (bytes: *u8, count: s64, uri: *s8 = null) -> *void {
@@ -377,7 +383,7 @@ NativeDisplay :: (wb: *Workbook, index: s32, row: s32, col: s32, out: *s8, cap: 
     if cell == null { return }
     text: *s8 = native_display(cell)
     if text != null {
-        FormatText(out, cast(u64)cap, CText("%s"), text)
+        FormatText(out, cast(usize)cap, CText("%s"), text)
         native_free(cast(*void)text)
     }
 }

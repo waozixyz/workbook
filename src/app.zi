@@ -48,6 +48,10 @@ RowAddIcon :: #import "mingcute_extra_table_row_add";
 RowRemoveIcon :: #import "mingcute_extra_table_row_remove";
 ColumnAddIcon :: #import "mingcute_extra_table_column_add";
 ColumnRemoveIcon :: #import "mingcute_extra_table_column_remove";
+LeftIcon :: #import "mingcute_regular_arrow_left";
+RightIcon :: #import "mingcute_regular_arrow_right";
+UpIcon :: #import "mingcute_regular_arrow_up";
+DownIcon :: #import "mingcute_regular_arrow_down";
 
 using ButtonEmphasis;
 using ButtonTone;
@@ -243,6 +247,15 @@ Frame :: (session: Session, viewport: Rectangle) -> s32 {
         LoadWorkbook()
         SelectCell(0, 0)
         UpdateDocumentTitle()
+    }
+    #if #defined(KRYON_HOSTED_UI) {
+        if document_pending {
+            response := AppService("document.pick.v1", "{\"op\":\"poll\"}")
+            if response != "pending" {
+                document_pending = false
+                DocumentTransferred(response, document_export)
+            }
+        }
     }
     #if !#defined(KRYON_HOSTED_UI) {
         dropped: [4096]u8
@@ -1115,6 +1128,20 @@ DrawToolbar :: (session: Session, viewport: Rectangle) {
         RecordChange()
         Engine.WorkbookDeleteColumn(workbook, sheet_index, selected_column)
         Changed()
+    }
+    // Touch screens have no arrow keys or wheel. Keep every cell reachable
+    // while the grid still supports selecting and filling ranges by dragging.
+    if viewport.width < 600.0 {
+        row := selected_row; column := selected_column
+        if ToolbarIcon(session, 1006, LeftIcon.Shape, *x, false) { column = Max(0, column - 1) }
+        if ToolbarIcon(session, 1007, UpIcon.Shape, *x, false) { row = Max(0, row - 1) }
+        if ToolbarIcon(session, 1008, DownIcon.Shape, *x, false) { row = Min(MaxRows - 1, row + 1) }
+        if ToolbarIcon(session, 1009, RightIcon.Shape, *x, false) { column = Min(MaxColumns - 1, column + 1) }
+        if row != selected_row || column != selected_column {
+            if edit_focused { CommitCell(); EndEdit() }
+            SelectCell(row, column)
+            EnsureVisible()
+        }
     }
 }
 
@@ -2080,8 +2107,10 @@ DrawMenus :: (session: Session, viewport: Rectangle) {
     file[1] = MenuItem.{.id = 102, .label = "Save", .accelerator = "Ctrl+S"}
     file[2] = MenuItem.{.id = 103, .label = "Save As…", .accelerator = "Ctrl+Shift+S"}
     #if #defined(KRYON_HOSTED_UI) {
-        file_count = 4
-        file[3] = MenuItem.{.id = 104, .label = "Download Workbook.zib…"}
+        if AppSupports("app.bundle.export.v1") {
+            file_count = 4
+            file[3] = MenuItem.{.id = 104, .label = "Download Workbook.zx…"}
+        }
     }
     edit_items: [9]MenuItem
     edit_items[0] = MenuItem.{.id = 201, .label = "Undo", .accelerator = "Ctrl+Z", .disabled = undo_count == 0 && edit_undo_count == 0}
@@ -2189,6 +2218,8 @@ DrawMenus :: (session: Session, viewport: Rectangle) {
     input_pointer: PointerFrame;
     input_secondary: SecondaryPointerFrame;
     input_wheel: float32;
+    document_pending: bool;
+    document_export: bool;
     FollowSystemTheme :: () {}
     MonotonicMilliseconds :: () -> s64 { return cast(s64)(AppNow() * 1000.0) }
     LoadWorkbook :: () {
@@ -2207,8 +2238,15 @@ DrawMenus :: (session: Session, viewport: Rectangle) {
         } else { dirty = true; save_retry_at = MonotonicMilliseconds() + 2000; SetText(status[:], "Could not save workbook") }
     }
     PickDocument :: (save: bool) {
+        if document_pending { return }
         if save { SaveWorkbook(true); if dirty { return } }
         response := AppService("document.pick.v1", ifx save then "{\"op\":\"export\",\"name\":\"workbook.gnumeric\",\"filter\":\"Spreadsheet | *.gnumeric\",\"suggested_name\":\"workbook.gnumeric\"}" else "{\"op\":\"import\",\"name\":\"incoming.gnumeric\",\"filter\":\"Spreadsheet | *.gnumeric\"}")
+        if response == "pending" {
+            document_pending = true
+            document_export = save
+        } else { DocumentTransferred(response, save) }
+    }
+    DocumentTransferred :: (response: string, save: bool) {
         if response == "ready" && !save {
             OpenDocument("incoming.gnumeric")
             if TextUntilNul(data_path[:]) == "incoming.gnumeric" {
@@ -2260,7 +2298,7 @@ DrawMenus :: (session: Session, viewport: Rectangle) {
         if mode == APP_FRAME {
             if !AppSupports("spreadsheet.v1") {
                 Text(AppSession(), TextProps.{.bounds = AppBounds(), .text = "Update Werkzeug to open Workbook.", .font = Text16})
-                return APP_PROTOCOL
+                return 0
             }
             ReadInput()
             unused Frame(AppSession(), AppBounds())

@@ -1,4 +1,4 @@
-// Native calculation for portable spreadsheet frontends. A harness owns each
+// Calculation for portable spreadsheet frontends. A harness owns each
 // Context and grants access only to that app's private document directory.
 Engine :: #import "engine";
 Json :: #import "std/json_scan";
@@ -84,7 +84,9 @@ Save :: (book: *Engine.Workbook, files: *AppFiles, name: string) -> bool {
     fd := Temporary(*temporary[0])
     if fd < 0 { return false }
     ok := Engine.WorkbookWriteGnumeric(book, cast(*s8)*temporary[0]) != 0
-    if ok { ok = Sync(fd) == 0 }
+    #if !#defined(PLATFORM_WEB) {
+        if ok { ok = Sync(fd) == 0 }
+    }
     if Close(fd) != 0 { ok = false }
     if ok { ok = Rename(*temporary[0], *target[0]) == 0 }
     if !ok { Remove(*temporary[0]) }
@@ -169,14 +171,13 @@ Call :: (context: *Context, files: *AppFiles, request: string) -> string {
         if ok {
             path := AppFilePath(files, key, false)
             defer { AppFileFree(path) }
-            descriptor := cast(*TextDescriptor)(*data)
-            view := Engine.NativeReadDocument(descriptor.data, data.count, Engine.CText(path))
-            ok = view != null
+            loaded := Engine.WorkbookNew()
+            ok = loaded != null && Engine.WorkbookLoadFile(loaded, Engine.CText(path)) != 0
             if ok {
-                Engine.NativeClose(book.native)
-                book.native = view
-                ok = Engine.NativeRefresh(book) != 0
-            }
+                Engine.WorkbookFree(book)
+                context.books[id - 1] = loaded
+                book = loaded
+            } else if loaded != null { Engine.WorkbookFree(loaded) }
         }
     } else if op == "save" {
         name: [4096]u8

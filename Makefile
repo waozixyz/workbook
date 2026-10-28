@@ -156,3 +156,6 @@ build/workbook.zib: $(SOURCES)
 .PHONY: service-test
 service-test: build/service_test
 	@build/service_test
+	@$(ZIRAN) build --project --define WORKBOOK_PORTABLE --target=c --entry service_test:main -o build/portable-service-c tests/service_test.zi
+	@$(CC) $(NATIVE_FLAGS) -I$(shell $(ZIRAN) pkg path ziran)/include -Ibuild/portable-service-c build/portable-service-c/*.c -lm -o build/portable-service-test
+	@build/portable-service-test
