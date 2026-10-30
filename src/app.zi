@@ -1530,8 +1530,8 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
             GridSquare(session, 1000 + shown, Rectangle.{table.x, y, table.width, HiddenRowHeight}, HeaderBackground(), "")
             strip: BoxProps
             strip.key = cast(u64)(500000 + shown)
-            strip.bounds = Rectangle.{table.x, y + 2.0, table.width, 2.0}
-            strip.fill = AccentColor()
+            strip.bounds = Rectangle.{table.x, y + 2.0, table.width, 1.0}
+            strip.fill = GridLineColor()
             Box(session, strip)
             shown += 1
             continue
