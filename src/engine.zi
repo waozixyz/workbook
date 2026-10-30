@@ -19465,7 +19465,7 @@ SubtotalCalculate :: (st: *EvalState, args: *Val, count: s32, marks: *s32, fun: 
 // Standard subtotals exclude other subtotal formulas in their references.
 // Scan formula tokens so text literals and quoted sheet names cannot match.
 CellHasSubtotal :: (cell: *Cell) -> bool {
-    if cell == null || cell.kind != CELL_FORMULA || cell.text == null { return false }
+    if cell == null || cell.kind != CELL_FORMULA || cell.text == null || cell.text[0] != 61 { return false }
     text: *s8 = cell.text
     at: s32 = 1
     while text[at] != 0 {
