@@ -25,7 +25,7 @@ ForbiddenFile :: (name: string) -> bool {
 }
 
 // Reports every forbidden file under path and returns how many it found.
-// Build outputs and the git directory at the top of the tree are skipped.
+// Build outputs, ignored recovery/scratch folders and git metadata are skipped.
 Walk :: (path: string, top: bool) -> s32 {
     entries: DirectoryEntries
     found: s32 = 0
@@ -33,7 +33,7 @@ Walk :: (path: string, top: bool) -> s32 {
     index: s32 = 0
     while index < entries.count {
         name: string = TextUntilNul(entries.names[index].bytes[:])
-        skip: bool = top && (name == ".git" || name == "build" || name == "dist")
+        skip: bool = top && (name == ".git" || name == "build" || name == "dist" || name == "backup" || name == "work")
         if !skip {
             child: [4096]u8
             SetText(child[:], path)

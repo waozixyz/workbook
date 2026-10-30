@@ -17,10 +17,23 @@ Contains :: (text: string, part: string) -> bool {
     return false
 }
 
+ExpectedMask :: (first: s32, last: s32, out: []u8) -> string {
+    for index: 0..31 {
+        row := cast(s32)index
+        out[index] = ifx row >= first && row <= last then 49 else 48
+    }
+    out[32] = 0
+    return TextUntilNul(out)
+}
+
 Good :: (request: string) -> string {
     reply := Service.Call(*context, *files, request)
     Check(Contains(reply, "\"ok\":true"), request)
     return reply
+}
+
+Subtotal10 :: (reply: string) -> bool {
+    return Contains(reply, "=SUBTOTAL(109,A1:A109)10") || Contains(reply, "=subtotal(109,A1:A109)10")
 }
 
 #program_export
@@ -39,6 +52,14 @@ main :: () -> s32 {
     unused Good("{\"op\":\"evaluate\",\"id\":1}")
     reply := Service.Call(*context, *files, "{\"op\":\"view\",\"id\":1}")
     Check(Contains(reply, "=A1*224"), "formula and its result cross the service boundary")
+    expected: [33]u8
+    Check(StartsWith(reply[5:], ExpectedMask(-1, -1, expected[:])), "visible rows start unhidden")
+    unused Good("{\"op\":\"set-rows-hidden\",\"id\":1,\"row\":2,\"last\":3,\"hidden\":1}")
+    reply = Service.Call(*context, *files, "{\"op\":\"view\",\"id\":1}")
+    Check(StartsWith(reply[5:], ExpectedMask(2, 3, expected[:])), "hidden row mask crosses the service boundary")
+    unused Good("{\"op\":\"set-rows-hidden\",\"id\":1,\"row\":2,\"last\":3,\"hidden\":0}")
+    reply = Service.Call(*context, *files, "{\"op\":\"view\",\"id\":1}")
+    Check(StartsWith(reply[5:], ExpectedMask(-1, -1, expected[:])), "rows can be shown again")
     unused Good("{\"op\":\"clone\",\"id\":1}")
     unused Good("{\"op\":\"set\",\"id\":2,\"text\":\"99\"}")
     unused Good("{\"op\":\"save\",\"id\":1,\"name\":\"test.gnumeric\"}")
@@ -61,6 +82,26 @@ main :: () -> s32 {
     unused Good("{\"op\":\"set\",\"id\":1,\"sheet\":1,\"text\":\"=SUM(Sheet1!A1:B1)\"}")
     unused Good("{\"op\":\"evaluate\",\"id\":1}")
     Check(Contains(Service.Call(*context, *files, "{\"op\":\"view\",\"id\":1,\"sheet\":1}"), "36"), "cross-sheet formula")
+    unused Good("{\"op\":\"add-sheet\",\"id\":1,\"text\":\"Totals\"}")
+    request: [128]u8
+    for row: 0..108 {
+        SetText(request[:], "{\"op\":\"set\",\"id\":1,\"sheet\":2,\"row\":")
+        AppendNumber(request[:], cast(s32)row)
+        AppendText(request[:], ",\"text\":\"1\"}")
+        unused Good(TextUntilNul(request[:]))
+    }
+    SetText(request[:], "{\"op\":\"set\",\"id\":1,\"sheet\":2,\"row\":108,\"col\":1,\"text\":\"=SUBTOTAL(109,A1:A109)\"}")
+    unused Good(TextUntilNul(request[:]))
+    SetText(request[:], "{\"op\":\"set-rows-hidden\",\"id\":1,\"sheet\":2,\"row\":0,\"last\":98,\"hidden\":1}")
+    unused Good(TextUntilNul(request[:]))
+    reply = Service.Call(*context, *files, "{\"op\":\"view\",\"id\":1,\"sheet\":2,\"row\":96}")
+    Check(StartsWith(reply[5:], ExpectedMask(0, 2, expected[:])), "hidden state follows view paging")
+    Check(Subtotal10(reply), "hidden rows are excluded from a 109-row sum")
+    unused Good("{\"op\":\"save\",\"id\":1,\"name\":\"hidden.gnumeric\"}")
+    unused Good("{\"op\":\"load\",\"id\":3,\"name\":\"hidden.gnumeric\"}")
+    reply = Service.Call(*context, *files, "{\"op\":\"view\",\"id\":3,\"sheet\":2,\"row\":96}")
+    Check(StartsWith(reply[5:], ExpectedMask(0, 2, expected[:])), "hidden rows survive save and load")
+    Check(Subtotal10(reply), "hidden-row totals survive save and load")
     Say("spreadsheet service: calculation, clone, save/reload, failed imports and private paths passed")
     return 0
 }

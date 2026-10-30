@@ -25,6 +25,9 @@ cache_row: s32;
 cache_col: s32;
 CachedCell :: struct { source: [512]u8; display: [512]u8; }
 cache: [512]CachedCell;
+HiddenPage :: struct { book_id: s32; sheet: s32; first_row: s32; valid: s32; mask: [32]u8; }
+hidden_pages: [8]HiddenPage;
+hidden_next: s32;
 relocated_text: [8192]u8;
 
 CText :: (value: string) -> string { return value }
@@ -77,6 +80,42 @@ OK :: (text: string) -> bool {
     return at >= 0 && at + 4 <= text.count && text[at:at + 4] == "true"
 }
 
+HiddenInvalidate :: () {
+    for index: 0..7 { hidden_pages[index].valid = 0 }
+    hidden_next = 0
+}
+
+HiddenRemember :: (book_id: s32, sheet: s32, first_row: s32, mask: []u8) {
+    for index: 0..7 {
+        page := *hidden_pages[index]
+        if page.valid != 0 && page.book_id == book_id && page.sheet == sheet && page.first_row == first_row {
+            for bit: 0..31 { page.mask[bit] = mask[bit] }
+            return
+        }
+    }
+    page := *hidden_pages[hidden_next]
+    page.* = HiddenPage.{.book_id = book_id, .sheet = sheet, .first_row = first_row, .valid = 1}
+    for bit: 0..31 { page.mask[bit] = mask[bit] }
+    hidden_next = (hidden_next + 1) % 8
+}
+
+HiddenHeader :: (reply: string, mask: []u8) -> bool {
+    if reply.count < 38 || reply[:5] != "view\n" { return false }
+    for index: 0..31 {
+        at := 5 + cast(s32)index
+        if reply[at] != 48 && reply[at] != 49 { return false }
+        mask[index] = reply[at]
+    }
+    return reply[37] == 10
+}
+
+HiddenLoad :: (book: *Workbook, sheet: s32, first_row: s32) -> bool {
+    mask: [32]u8
+    if !HiddenHeader(Request("view", book, sheet, first_row, 0), mask[:]) { return false }
+    HiddenRemember(book.id, sheet, first_row, mask[:])
+    return true
+}
+
 Update :: (book: *Workbook, reply: string, sheet: s32) {
     if book == null { return }
     book.sheets = Number(reply, "sheets")
@@ -101,6 +140,7 @@ Request :: (op: string, book: *Workbook, sheet: s32 = 0, row: s32 = 0,
     reply := AppService("spreadsheet.v1", BuilderFinish(bytes))
     if op != "info" && op != "view" && op != "find-ref" && op != "prefix" && op != "relocate" {
         cache_id = 0
+        HiddenInvalidate()
     }
     if op != "view" && op != "free" && op != "find-ref" && op != "prefix" && op != "relocate" {
         Update(book, reply, sheet)
@@ -138,6 +178,11 @@ WorkbookSheetName :: (book: *Workbook, sheet: s32) -> string { Meta(book, sheet)
 WorkbookEvaluate :: (book: *Workbook) { unused Request("evaluate", book) }
 WorkbookSetCell :: (book: *Workbook, sheet: s32, row: s32, col: s32, value: string) -> s32 {
     return ifx OK(Request("set", book, sheet, row, col, value)) then 1 else 0
+}
+WorkbookSetRowsHidden :: (book: *Workbook, sheet: s32, first: s32, last: s32, hidden: s32) -> s32 {
+    bytes: Vec(u8)
+    BuilderPrint(*bytes, ",\"last\":%,\"hidden\":%", last, hidden)
+    return ifx OK(Request("set-rows-hidden", book, sheet, first, 0, "", BuilderFinish(bytes))) then 1 else 0
 }
 WorkbookInsertRow :: (book: *Workbook, sheet: s32, row: s32) { unused Request("insert-row", book, sheet, row) }
 WorkbookDeleteRow :: (book: *Workbook, sheet: s32, row: s32) { unused Request("delete-row", book, sheet, row) }
@@ -177,8 +222,10 @@ Page :: (book: *Workbook, sheet: s32, row: s32, col: s32) {
     for index: 0..511 { cache[index].source[0] = 0; cache[index].display[0] = 0 }
     cache_id = 0; cache_row = first_row; cache_col = first_col
     reply := Request("view", book, sheet, first_row, first_col)
-    if reply.count < 5 || reply[:5] != "view\n" { return }
-    at: s64 = 5
+    mask: [32]u8
+    if !HiddenHeader(reply, mask[:]) { return }
+    HiddenRemember(book.id, sheet, first_row, mask[:])
+    at: s64 = 38
     while at < reply.count {
         r := PacketNumber(reply, *at); c := PacketNumber(reply, *at)
         source := PacketNumber(reply, *at); display := PacketNumber(reply, *at)
@@ -202,6 +249,24 @@ WorkbookCellDisplay :: (book: *Workbook, sheet: s32, row: s32, col: s32, out: []
     Page(book, sheet, row, col)
     if cache_id != book.id { Copy(out, "", cap); return }
     Copy(out, TextUntilNul(cache[(row - cache_row) * 16 + col - cache_col].display[:]), cap)
+}
+WorkbookRowHidden :: (book: *Workbook, sheet: s32, row: s32) -> s32 {
+    if book == null || row < 0 { return 0 }
+    first_row := row / 32 * 32
+    for index: 0..7 {
+        page := *hidden_pages[index]
+        if page.valid != 0 && page.book_id == book.id && page.sheet == sheet && page.first_row == first_row {
+            return cast(s32)(page.mask[row - first_row] == 49)
+        }
+    }
+    if !HiddenLoad(book, sheet, first_row) { return 0 }
+    for index: 0..7 {
+        page := *hidden_pages[index]
+        if page.valid != 0 && page.book_id == book.id && page.sheet == sheet && page.first_row == first_row {
+            return cast(s32)(page.mask[row - first_row] == 49)
+        }
+    }
+    return 0
 }
 FormulaRelocate :: (book: *Workbook, text: string, row: s32, col: s32) -> string {
     reply := Request("relocate", book, 0, row, col, text)

@@ -92,6 +92,76 @@ NativeFn_insert_cols :: #type (*void, s32, s32, *void, *void) -> s32 #c_call;
 native_insert_cols: NativeFn_insert_cols;
 NativeFn_delete_cols :: #type (*void, s32, s32, *void, *void) -> s32 #c_call;
 native_delete_cols: NativeFn_delete_cols;
+NativeFn_row_hidden :: #type (*void, s32) -> s32 #c_call;
+native_row_hidden: NativeFn_row_hidden;
+NativeFn_set_visibility :: #type (*void, s32, s32, s32, s32) #c_call;
+native_set_visibility: NativeFn_set_visibility;
+NativeCellPosition :: struct { col: s32; row: s32; }
+NativeEvalPosition :: struct {
+    eval: NativeCellPosition;
+    sheet: *void;
+    dependent: *void;
+    array_expression: *void;
+}
+NativeFunctionEvalInfo :: struct {
+    position: *NativeEvalPosition;
+    function_call: *void;
+    flags: s32;
+}
+NativeFunctionNodes :: #type (*NativeFunctionEvalInfo, s32, **void) -> *void #c_call;
+NativeIterateValuesCallback :: #type (*NativeEvalPosition, *void, *void) -> *void #c_call;
+NativeRangeFunction :: #type (*float64, s32, *float64) -> s32 #c_call;
+NativeCellReference :: struct {
+    sheet: *void;
+    col: s32;
+    row: s32;
+    col_relative: u8;
+    row_relative: u8;
+}
+NativeFn_function_lookup :: #type (*s8, *void) -> *void #c_call;
+native_function_lookup: NativeFn_function_lookup;
+NativeFn_function_load :: #type (*void) #c_call;
+native_function_load: NativeFn_function_load;
+NativeFn_function_set_varargs :: #type (*void, *void, *s8) #c_call;
+native_function_set_varargs: NativeFn_function_set_varargs;
+NativeFn_expression_evaluate :: #type (*void, *NativeEvalPosition, s32) -> *void #c_call;
+native_expression_evaluate: NativeFn_expression_evaluate;
+NativeFn_expression_cellref :: #type (*void) -> *NativeCellReference #c_call;
+native_expression_cellref: NativeFn_expression_cellref;
+NativeFn_cellref_col :: #type (*NativeCellReference, *NativeEvalPosition) -> s32 #c_call;
+native_cellref_col: NativeFn_cellref_col;
+NativeFn_cellref_row :: #type (*NativeCellReference, *NativeEvalPosition) -> s32 #c_call;
+native_cellref_row: NativeFn_cellref_row;
+NativeFn_value_as_int :: #type (*void) -> s32 #c_call;
+native_value_as_int: NativeFn_value_as_int;
+NativeFn_value_release :: #type (*void) #c_call;
+native_value_release: NativeFn_value_release;
+NativeFn_value_duplicate :: #type (*void) -> *void #c_call;
+native_value_duplicate: NativeFn_value_duplicate;
+NativeFn_new_error_num :: #type (*NativeEvalPosition) -> *void #c_call;
+native_new_error_num: NativeFn_new_error_num;
+NativeFn_new_error_div0 :: #type (*NativeEvalPosition) -> *void #c_call;
+native_new_error_div0: NativeFn_new_error_div0;
+NativeFn_new_error_value :: #type (*NativeEvalPosition) -> *void #c_call;
+native_new_error_value: NativeFn_new_error_value;
+NativeFn_new_float :: #type (float64) -> *void #c_call;
+native_new_float: NativeFn_new_float;
+NativeFn_iterate_values :: #type (*NativeEvalPosition, *void, *void, s32, **void, s32, s32) -> *void #c_call;
+native_iterate_values: NativeFn_iterate_values;
+NativeFn_realloc :: #type (*void, usize) -> *void #c_call;
+native_realloc: NativeFn_realloc;
+NativeFn_g_free :: #type (*void) #c_call;
+native_g_free: NativeFn_g_free;
+native_range_average: NativeRangeFunction;
+native_range_count: NativeRangeFunction;
+native_range_maximum: NativeRangeFunction;
+native_range_minimum: NativeRangeFunction;
+native_range_product: NativeRangeFunction;
+native_range_stddev_estimate: NativeRangeFunction;
+native_range_stddev_population: NativeRangeFunction;
+native_range_sum: NativeRangeFunction;
+native_range_variance_estimate: NativeRangeFunction;
+native_range_variance_population: NativeRangeFunction;
 NativeFn_canonical_path :: #type (*s8, *s8) -> *s8 #c_call;
 native_canonical_path: NativeFn_canonical_path;
 NativeFn_filename_uri :: #type (*s8, *s8, *void) -> *s8 #c_call;
@@ -126,6 +196,157 @@ NativeResolve :: (slot: *void, name: string) -> bool {
     if symbol == null { return false }
     MemoryCopy(slot, cast(*void)*symbol, size_of(*void))
     return true
+}
+
+NativeSubtotalCollector :: struct {
+    values: *float64;
+    count: s32;
+    capacity: s32;
+    function: s32;
+    ignore_hidden: bool;
+    base_position: *NativeEvalPosition;
+}
+
+NativeSubtotalVisit :: (
+    position: *NativeEvalPosition,
+    value: *void,
+    closure: *void
+) -> *void {
+    collector: *NativeSubtotalCollector = cast(*NativeSubtotalCollector)closure
+    if collector.ignore_hidden && position != collector.base_position && position.sheet != null &&
+            native_row_hidden(position.sheet, position.eval.row) != 0 {
+        return null
+    }
+    kind: s32 = ifx value == null then 10 else native_value_type(value)
+    number: float64 = 0
+    if kind == 40 {
+        number = native_number(value)
+    } else if kind == 20 || kind == 50 || kind == 60 {
+        if collector.function == 3 {
+            number = 0
+        } else if kind == 50 && collector.function == 2 {
+            return null
+        } else if kind != 50 {
+            return null
+        } else {
+            return native_value_duplicate(value)
+        }
+    } else if kind != 10 {
+        return native_new_error_value(position)
+    } else {
+        return null
+    }
+    if collector.count == collector.capacity {
+        collector.capacity = collector.capacity * 2 + 16
+        collector.values = cast(*float64)native_realloc(
+            cast(*void)collector.values,
+            cast(usize)collector.capacity * size_of(float64)
+        )
+    }
+    collector.values[collector.count] = number
+    collector.count += 1
+    return null
+}
+
+NativeSubtotal :: (eval_info: *NativeFunctionEvalInfo, argc: s32, argv: **void) -> *void {
+    if eval_info == null || eval_info.position == null { return null }
+    if argv == null || argc < 1 {
+        return native_new_error_num(eval_info.position)
+    }
+    function_value: *void = native_expression_evaluate(argv[0], eval_info.position, 0)
+    if function_value == null {
+        return native_new_error_num(eval_info.position)
+    }
+    if native_value_type(function_value) == 50 { return function_value }
+    function: s32 = native_value_as_int(function_value)
+    native_value_release(function_value)
+    ignore_hidden: bool = function >= 101 && function <= 111
+    if ignore_hidden { function -= 100 }
+    if function < 1 || function > 11 {
+        return native_new_error_num(eval_info.position)
+    }
+
+    aggregate: NativeRangeFunction = native_range_average
+    if function == 1 { aggregate = native_range_average }
+    else if function == 2 || function == 3 { aggregate = native_range_count }
+    else if function == 4 { aggregate = native_range_maximum }
+    else if function == 5 { aggregate = native_range_minimum }
+    else if function == 6 { aggregate = native_range_product }
+    else if function == 7 { aggregate = native_range_stddev_estimate }
+    else if function == 8 { aggregate = native_range_stddev_population }
+    else if function == 9 { aggregate = native_range_sum }
+    else if function == 10 { aggregate = native_range_variance_estimate }
+    else { aggregate = native_range_variance_population }
+
+    collector: NativeSubtotalCollector
+    collector.function = function
+    collector.ignore_hidden = ignore_hidden
+    collector.base_position = eval_info.position
+    defer { native_g_free(cast(*void)collector.values) }
+    visit: NativeIterateValuesCallback = NativeSubtotalVisit
+    visit_opaque: *void
+    MemoryCopy(cast(*void)*visit_opaque, cast(*void)*visit, size_of(*void))
+    remaining: **void = null
+    remaining_count: s32 = 0
+    remaining_capacity: s32 = 0
+    error: *void
+    argument: s32 = 1
+    while argument < argc {
+        reference: *NativeCellReference = native_expression_cellref(argv[argument])
+        if reference != null {
+            reference_position: NativeEvalPosition
+            reference_position.eval.col = native_cellref_col(reference, eval_info.position)
+            reference_position.eval.row = native_cellref_row(reference, eval_info.position)
+            reference_position.sheet = ifx reference.sheet != null then reference.sheet else eval_info.position.sheet
+            reference_position.dependent = null
+            reference_position.array_expression = null
+            node: *void = native_cell(reference_position.sheet, reference_position.eval.col, reference_position.eval.row)
+            if node != null {
+                source: *s8 = native_source(node)
+                nested: Cell
+                nested.kind = CELL_FORMULA
+                nested.text = source
+                skip: bool = CellHasSubtotal(*nested)
+                native_free(cast(*void)source)
+                if skip { argument += 1; continue }
+            }
+            reference_value: *void = native_expression_evaluate(argv[argument], eval_info.position, 2)
+            error = NativeSubtotalVisit(*reference_position, reference_value, cast(*void)*collector)
+            if reference_value != null { native_value_release(reference_value) }
+            if error != null {
+                native_g_free(cast(*void)remaining)
+                return error
+            }
+        } else {
+            if remaining_count == remaining_capacity {
+                remaining_capacity = remaining_capacity * 2 + 4
+                remaining = cast(**void)native_realloc(
+                    cast(*void)remaining,
+                    cast(usize)remaining_capacity * size_of(*void)
+                )
+            }
+            remaining[remaining_count] = argv[argument]
+            remaining_count += 1
+        }
+        argument += 1
+    }
+    error = native_iterate_values(
+        eval_info.position,
+        visit_opaque,
+        cast(*void)*collector,
+        remaining_count,
+        remaining,
+        0,
+        24
+    )
+    native_g_free(cast(*void)remaining)
+    if error != null { return error }
+    result: float64 = 0
+    if collector.count == 0 && (function == 4 || function == 5) { return native_new_float(0) }
+    if aggregate(collector.values, collector.count, *result) != 0 {
+        return native_new_error_div0(eval_info.position)
+    }
+    return native_new_float(result)
 }
 
 #scope_export
@@ -177,6 +398,35 @@ NativeReady :: () -> bool {
         ok = ok && NativeResolve(cast(*void)*native_delete_rows, "sheet_delete_rows")
         ok = ok && NativeResolve(cast(*void)*native_insert_cols, "sheet_insert_cols")
         ok = ok && NativeResolve(cast(*void)*native_delete_cols, "sheet_delete_cols")
+        ok = ok && NativeResolve(cast(*void)*native_row_hidden, "sheet_row_is_hidden")
+        ok = ok && NativeResolve(cast(*void)*native_set_visibility, "colrow_set_visibility")
+        ok = ok && NativeResolve(cast(*void)*native_function_lookup, "gnm_func_lookup")
+        ok = ok && NativeResolve(cast(*void)*native_function_load, "gnm_func_load_if_stub")
+        ok = ok && NativeResolve(cast(*void)*native_function_set_varargs, "gnm_func_set_varargs")
+        ok = ok && NativeResolve(cast(*void)*native_expression_evaluate, "gnm_expr_eval")
+        ok = ok && NativeResolve(cast(*void)*native_expression_cellref, "gnm_expr_get_cellref")
+        ok = ok && NativeResolve(cast(*void)*native_cellref_col, "gnm_cellref_get_col")
+        ok = ok && NativeResolve(cast(*void)*native_cellref_row, "gnm_cellref_get_row")
+        ok = ok && NativeResolve(cast(*void)*native_value_as_int, "value_get_as_int")
+        ok = ok && NativeResolve(cast(*void)*native_value_release, "value_release")
+        ok = ok && NativeResolve(cast(*void)*native_value_duplicate, "value_dup")
+        ok = ok && NativeResolve(cast(*void)*native_new_error_num, "value_new_error_NUM")
+        ok = ok && NativeResolve(cast(*void)*native_new_error_div0, "value_new_error_DIV0")
+        ok = ok && NativeResolve(cast(*void)*native_new_error_value, "value_new_error_VALUE")
+        ok = ok && NativeResolve(cast(*void)*native_new_float, "value_new_float")
+        ok = ok && NativeResolve(cast(*void)*native_iterate_values, "function_iterate_argument_values")
+        ok = ok && NativeResolve(cast(*void)*native_realloc, "g_realloc")
+        ok = ok && NativeResolve(cast(*void)*native_g_free, "g_free")
+        ok = ok && NativeResolve(cast(*void)*native_range_average, "go_range_average")
+        ok = ok && NativeResolve(cast(*void)*native_range_count, "gnm_range_count")
+        ok = ok && NativeResolve(cast(*void)*native_range_maximum, "go_range_max")
+        ok = ok && NativeResolve(cast(*void)*native_range_minimum, "go_range_min")
+        ok = ok && NativeResolve(cast(*void)*native_range_product, "gnm_range_product")
+        ok = ok && NativeResolve(cast(*void)*native_range_stddev_estimate, "gnm_range_stddev_est")
+        ok = ok && NativeResolve(cast(*void)*native_range_stddev_population, "gnm_range_stddev_pop")
+        ok = ok && NativeResolve(cast(*void)*native_range_sum, "go_range_sum")
+        ok = ok && NativeResolve(cast(*void)*native_range_variance_estimate, "gnm_range_var_est")
+        ok = ok && NativeResolve(cast(*void)*native_range_variance_population, "gnm_range_var_pop")
         ok = ok && NativeResolve(cast(*void)*native_saver, "go_file_saver_for_id")
         ok = ok && NativeResolve(cast(*void)*native_output_file, "gsf_output_stdio_new")
         ok = ok && NativeResolve(cast(*void)*native_output_memory, "gsf_output_memory_new")
@@ -210,6 +460,13 @@ NativeReady :: () -> bool {
         // Optional plugin activation failures do not disable the core reader.
         if error != null { native_error_free(error) }
         if kept { unused NativeSetLocale(NATIVE_LC_ALL, *saved[0]) }
+        subtotal: *void = native_function_lookup(CText("SUBTOTAL"), null)
+        if subtotal == null { return false }
+        native_function_load(subtotal)
+        subtotal_callback: NativeFunctionNodes = NativeSubtotal
+        subtotal_callback_opaque: *void
+        MemoryCopy(cast(*void)*subtotal_callback_opaque, cast(*void)*subtotal_callback, size_of(*void))
+        native_function_set_varargs(subtotal, subtotal_callback_opaque, null)
         native_ready = true
         return true
     }
@@ -379,6 +636,23 @@ NativeShift :: (wb: *Workbook, index: s32, at: s32, rows: bool, insert: bool) ->
         else { result = native_delete_cols(sheet, at, 1, null, native_context) }
     }
     if result != 0 { return 0 }
+    return NativeRefresh(wb)
+}
+
+NativeRowHidden :: (wb: *Workbook, index: s32, row: s32) -> s32 {
+    sheet: *void = native_sheet(native_book(wb.native), index)
+    if sheet == null || row < 0 || row >= WB_MAX_ROWS {
+        return 0
+    }
+    return native_row_hidden(sheet, row)
+}
+
+NativeSetRowsHidden :: (wb: *Workbook, index: s32, first: s32, last: s32, hidden: s32) -> s32 {
+    sheet: *void = native_sheet(native_book(wb.native), index)
+    if sheet == null {
+        return 0
+    }
+    native_set_visibility(sheet, 0, ifx hidden == 0 then 1 else 0, first, last)
     return NativeRefresh(wb)
 }
 

@@ -33,6 +33,7 @@ development packages installed.
     make test         # source audit, structure and conversion tests, desktop test on a private display, gnumeric parity
     make test-ci      # the same without parity, which is what CI runs
     make gnumeric-test # native document, edit, undo and round-trip regressions
+    make hidden-rows-test # row visibility, totals and undo/redo on a private display
     make parity       # evaluation and round-trip tests against Gnumeric
     make fuzz REFERENCE=PATH   # compare this cell with another on generated inputs
     make install      # install workbook, cell, and geld under ~/.local
@@ -101,6 +102,12 @@ Formula cells show their calculated value in the grid and their source in the
 formula bar. The toolbar provides save and row/column insertion and deletion,
 and the sheet tabs at the bottom switch sheets. Cells accept text, numbers, or
 formulas in the Gnumeric expression language.
+
+Right-click a row number and choose **Hide rows** to collapse it to a thin
+line. Shift-click row numbers to select several rows first. Click a thin line
+to show its row again; both actions support undo and redo. Hidden rows stay
+in the document. Use `=SUBTOTAL(109,A1:A20)` for totals that skip hidden rows;
+ordinary `SUM` and `SUBTOTAL(9,…)` continue to include them.
 
 Changes save automatically, including the cell you are typing, pasted values,
 and inserted or deleted rows and columns. Clicking another cell or closing the

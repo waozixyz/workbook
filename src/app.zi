@@ -85,6 +85,7 @@ MaxColumns :: 16384; // GNM_MAX_COLS
 CellTextMax :: 256;
 ColumnWidth :: 96.0;
 RowHeight :: 22.0;
+HiddenRowHeight :: 6.0;
 HeaderHeight :: 24.0;
 RowHeaderWidth :: 40.0;
 TableTop :: 86.0;
@@ -822,8 +823,8 @@ HandleGridKeys :: (key: s32, control: bool, typed: []u8, typed_length: s32) {
     if control && key == KeyC { CopyCell() }
     if control && key == KeyX { CutCell() }
     if control && key == KeyV { PasteCells() }
-    if key == KeyUp { SelectCell(selected_row - 1, selected_column) }
-    if key == KeyDown { SelectCell(selected_row + 1, selected_column) }
+    if key == KeyUp { SelectCell(NextVisibleRow(selected_row, -1), selected_column) }
+    if key == KeyDown { SelectCell(NextVisibleRow(selected_row, 1), selected_column) }
     if key == KeyLeft { SelectCell(selected_row, selected_column - 1) }
     if key == KeyRight || key == KeyTab {
         SelectCell(selected_row, selected_column + 1)
@@ -1134,8 +1135,8 @@ DrawToolbar :: (session: Session, viewport: Rectangle) {
     if viewport.width < 600.0 {
         row := selected_row; column := selected_column
         if ToolbarIcon(session, 1006, LeftIcon.Shape, *x, false) { column = Max(0, column - 1) }
-        if ToolbarIcon(session, 1007, UpIcon.Shape, *x, false) { row = Max(0, row - 1) }
-        if ToolbarIcon(session, 1008, DownIcon.Shape, *x, false) { row = Min(MaxRows - 1, row + 1) }
+        if ToolbarIcon(session, 1007, UpIcon.Shape, *x, false) { row = NextVisibleRow(row, -1) }
+        if ToolbarIcon(session, 1008, DownIcon.Shape, *x, false) { row = NextVisibleRow(row, 1) }
         if ToolbarIcon(session, 1009, RightIcon.Shape, *x, false) { column = Min(MaxColumns - 1, column + 1) }
         if row != selected_row || column != selected_column {
             if edit_focused { CommitCell(); EndEdit() }
@@ -1261,7 +1262,7 @@ DrawFormulaBar :: (session: Session, viewport: Rectangle, key: s32,
     if result.committed {
         CommitCell()
         EndEdit()
-        SelectCell(selected_row + 1, selected_column)
+        SelectCell(NextVisibleRow(selected_row, 1), selected_column)
         EnsureVisible()
     }
     if result.escaped {
@@ -1420,6 +1421,35 @@ PickShown :: () -> bool { return FormulaEditing() && pick_start >= 0 && pick_she
 
 visible_rows: s32 = 16;
 visible_columns: s32 = 8;
+grid_body_height: float32 = 352.0;
+
+RowHidden :: (row: s32) -> bool { return Engine.WorkbookRowHidden(workbook, sheet_index, row) != 0 }
+GridRowHeight :: (row: s32) -> float32 { return ifx RowHidden(row) then HiddenRowHeight else RowHeight }
+
+NextVisibleRow :: (row: s32, step: s32) -> s32 {
+    next: s32 = row + step
+    while next >= 0 && next < MaxRows && RowHidden(next) { next += step }
+    return ifx next >= 0 && next < MaxRows then next else row
+}
+
+GridRowAt :: (table: Rectangle, y: float32) -> s32 {
+    row: s32 = scroll_row
+    top: float32 = table.y + HeaderHeight
+    while row < scroll_row + visible_rows - 1 && y >= top + GridRowHeight(row) {
+        top += GridRowHeight(row)
+        row += 1
+    }
+    return row
+}
+
+SetRowsHidden :: (first: s32, last: s32, hidden: bool) {
+    RecordChange()
+    if Engine.WorkbookSetRowsHidden(workbook, sheet_index, first, last, ifx hidden then 1 else 0) == 0 { return }
+    Changed()
+    if hidden && RowHidden(selected_row) { SelectCell(NextVisibleRow(last, 1), selected_column) }
+    selection_axis = 0
+    EnsureVisible()
+}
 
 // Frames since the last click, and the cell it landed on. The host paces
 // frames at roughly 60 per second, so 24 frames is a little under half a second.
@@ -1431,7 +1461,7 @@ last_click_column: s32 = -1;
 EnsureVisible :: () {
     if selected_row < scroll_row { scroll_row = selected_row }
     if selected_row >= scroll_row + visible_rows {
-        scroll_row = selected_row - visible_rows + 1
+        scroll_row = Max(0, selected_row - Max(1, cast(s32)(grid_body_height / RowHeight)) + 1)
     }
     if selected_column < scroll_column { scroll_column = selected_column }
     if selected_column >= scroll_column + visible_columns {
@@ -1444,7 +1474,8 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
         viewport.width - Margin * 2.0, viewport.height - TableTop - GridBottom}
     grid_right = table.x + table.width
     grid_bottom = table.y + table.height
-    visible_rows = cast(s32)((table.height - HeaderHeight + RowHeight - 1.0) / RowHeight)
+    grid_body_height = table.height - HeaderHeight
+    visible_rows = cast(s32)((grid_body_height + RowHeight - 1.0) / RowHeight)
     visible_columns = cast(s32)((table.width - RowHeaderWidth + ColumnWidth - 1.0) / ColumnWidth)
     rows: s32 = GridRows()
     columns: s32 = GridColumns()
@@ -1452,9 +1483,23 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
     wheel: float32 = EditorWheel(session, table)
     if wheel > 0.0 { scroll_row -= 1 }
     if wheel < 0.0 { scroll_row += 1 }
-    if scroll_row > rows - visible_rows { scroll_row = rows - visible_rows }
+    last_start: s32 = rows
+    tail_height: float32 = 0.0
+    while last_start > 0 && tail_height < grid_body_height {
+        last_start -= 1
+        tail_height += GridRowHeight(last_start)
+    }
+    if scroll_row > last_start { scroll_row = last_start }
     if scroll_row < 0 { scroll_row = 0 }
 
+    if rows < scroll_row + visible_rows { rows = scroll_row + visible_rows }
+    // Count actual rows, including the narrow reveal strips, to the bottom edge.
+    visible_rows = 0
+    used_height: float32 = 0.0
+    while used_height < grid_body_height && scroll_row + visible_rows < MaxRows {
+        used_height += GridRowHeight(scroll_row + visible_rows)
+        visible_rows += 1
+    }
     if rows < scroll_row + visible_rows { rows = scroll_row + visible_rows }
     if columns < scroll_column + visible_columns { columns = scroll_column + visible_columns }
 
@@ -1481,6 +1526,16 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
     while shown < visible_rows && scroll_row + shown < rows {
         row: s32 = scroll_row + shown
         y: float32 = RowY(table, row)
+        if RowHidden(row) {
+            GridSquare(session, 1000 + shown, Rectangle.{table.x, y, table.width, HiddenRowHeight}, HeaderBackground(), "")
+            strip: BoxProps
+            strip.key = cast(u64)(500000 + shown)
+            strip.bounds = Rectangle.{table.x, y + 2.0, table.width, 2.0}
+            strip.fill = AccentColor()
+            Box(session, strip)
+            shown += 1
+            continue
+        }
         number: [16]u8
         row_digits: [16]u8
         SetText(number[:], FormatInteger(cast(s64)row + 1, row_digits[:]))
@@ -1535,13 +1590,17 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
     pointer: PointerFrame = EditorPointer(session)
     body: Rectangle = Rectangle.{table.x + RowHeaderWidth, table.y + HeaderHeight,
         table.width - RowHeaderWidth, table.height - HeaderHeight}
-    hit_row: s32 = scroll_row + cast(s32)((pointer.y - body.y) / RowHeight)
+    hit_row: s32 = GridRowAt(table, pointer.y)
     hit_column: s32 = scroll_column + cast(s32)((pointer.x - body.x) / ColumnWidth)
     on_cell: bool = PointInBounds(pointer.x, pointer.y, body) && hit_row < rows &&
     hit_row < scroll_row + visible_rows && hit_column < columns && hit_column < scroll_column + visible_columns
     if pointer.pressed && !grid_menu_open {
         handle: Rectangle = FillHandleBounds(table)
-        if handle.width > 0.0 && PointInBounds(pointer.x, pointer.y, handle) {
+        if PointInBounds(pointer.x, pointer.y, table) && pointer.y >= body.y && RowHidden(hit_row) {
+            SetRowsHidden(hit_row, hit_row, false)
+            SelectCell(hit_row, selected_column)
+            return
+        } else if handle.width > 0.0 && PointInBounds(pointer.x, pointer.y, handle) {
             drag_mode = DragFill
             fill_axis = 0
         } else if on_cell && CanPick() {
@@ -1571,7 +1630,9 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
         } else if PointInBounds(pointer.x, pointer.y, table) && pointer.x < body.x && pointer.y >= body.y {
             if hit_row < rows && hit_row < scroll_row + visible_rows {
                 edit_focused = false
-                SelectCell(hit_row, selected_column); selection_axis = 1; frames_since_click = 1000
+                if shift_held && selection_axis == 1 { range_row = hit_row }
+                else { SelectCell(hit_row, selected_column); selection_axis = 1 }
+                frames_since_click = 1000
             }
         }
     }
@@ -1585,7 +1646,7 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
             if pointer.x < body.x && scroll_column > 0 { scroll_column -= 1 }
         }
         row: s32 = scroll_row
-        if pointer.y > body.y { row = scroll_row + cast(s32)((pointer.y - body.y) / RowHeight) }
+        if pointer.y > body.y { row = GridRowAt(table, pointer.y) }
         row = Min(row, Min(scroll_row + visible_rows - 1, MaxRows - 1))
         column = scroll_column
         if pointer.x > body.x { column = scroll_column + cast(s32)((pointer.x - body.x) / ColumnWidth) }
@@ -1612,19 +1673,20 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
     }
     secondary: SecondaryPointerFrame = EditorSecondaryPointer(session)
     if secondary.released && !grid_menu_open && PointInBounds(pointer.x, pointer.y, table) && pointer.x < body.x && pointer.y >= body.y {
-        row := scroll_row + cast(s32)((pointer.y - body.y) / RowHeight)
-        if row < rows && row < scroll_row + visible_rows {
+        row := GridRowAt(table, pointer.y)
+        if row < rows && row < scroll_row + visible_rows && !RowHidden(row) {
             edit_focused = false
-            SelectCell(row, selected_column); selection_axis = 1; frames_since_click = 1000
+            if selection_axis != 1 || row < first_row || row > last_row { SelectCell(row, selected_column) }
+            selection_axis = 1; frames_since_click = 1000
             grid_menu_row = true; grid_menu_open = true; grid_menu_x = pointer.x; grid_menu_y = pointer.y
         }
     }
     if secondary.released && !grid_menu_open && PointInBounds(pointer.x, pointer.y, body) {
         // The secondary button opens the menu; outside the selection it first
         // selects the cell under it.
-        row: s32 = scroll_row + cast(s32)((pointer.y - body.y) / RowHeight)
+        row: s32 = GridRowAt(table, pointer.y)
         clicked: s32 = scroll_column + cast(s32)((pointer.x - body.x) / ColumnWidth)
-        if row < rows && clicked < columns && clicked < scroll_column + visible_columns {
+        if row < rows && !RowHidden(row) && clicked < columns && clicked < scroll_column + visible_columns {
             inside: bool = here && selection_axis == 0 && row >= first_row && row <= last_row &&
             clicked >= first_column && clicked <= last_column
             edit_focused = false
@@ -1644,6 +1706,7 @@ FillHandleBounds :: (table: Rectangle) -> Rectangle {
     if selection_axis != 0 || edit_focused || sheet_index != edit_sheet { return none }
     row: s32 = SelectionLastRow()
     column: s32 = SelectionLastColumn()
+    if RowHidden(row) { return none }
     if row < scroll_row || row >= scroll_row + visible_rows ||
     column < scroll_column || column >= scroll_column + visible_columns { return none }
     x: float32 = ColumnX(table, column) + ColumnWidth
@@ -1729,6 +1792,7 @@ DrawReferenceOutlines :: (session: Session, table: Rectangle) {
 // neighbors when it is wider than the cell, with the cursor in it.
 DrawCellEditor :: (session: Session, table: Rectangle) {
     if !edit_focused || sheet_index != edit_sheet { return }
+    if RowHidden(selected_row) { return }
     if selected_row < scroll_row || selected_row >= scroll_row + visible_rows ||
     selected_column < scroll_column || selected_column >= scroll_column + visible_columns { return }
     text: string = TextUntilNul(edit[:])
@@ -1775,7 +1839,7 @@ CellOutline :: (session: Session, key: s32, table: Rectangle, first_row: s32, fi
     x: float32 = ColumnX(table, left)
     y: float32 = RowY(table, top)
     width: float32 = cast(float32)(right - left + 1) * ColumnWidth
-    height: float32 = cast(float32)(bottom - top + 1) * RowHeight
+    height: float32 = RowY(table, bottom) + GridRowHeight(bottom) - y
     width = MinFloat(width, grid_right - x)
     height = MinFloat(height, grid_bottom - y)
     for line: 0..thickness - 1 {
@@ -1830,7 +1894,8 @@ DrawGridMenu :: (session: Session, escape: bool) {
         items[0].id = 6; items[0].label = "Insert above"
         items[1].id = 10; items[1].label = "Insert below"
         items[2].id = 7; items[2].label = "Delete row"; items[2].disabled = false
-        count = 3
+        items[3].id = 11; items[3].label = "Hide rows"
+        count = 4
     }
     props: ContextMenuProps
     props.key = cast(u64)1200
@@ -1848,6 +1913,7 @@ GridCommand :: (id: s32) {
     if id == 2 { CopyCell() }
     if id == 3 { PasteCells() }
     if id == 4 { ClearCell() }
+    if id == 11 { SetRowsHidden(SelectionFirstRow(), SelectionLastRow(), true) }
     if id == 6 {
         RecordChange()
         Engine.WorkbookInsertRow(workbook, sheet_index, selected_row)
@@ -1888,7 +1954,10 @@ ColumnX :: (table: Rectangle, column: s32) -> float32 {
 }
 
 RowY :: (table: Rectangle, row: s32) -> float32 {
-    return table.y + HeaderHeight + cast(float32)(row - scroll_row) * RowHeight
+    y: float32 = table.y + HeaderHeight
+    at: s32 = scroll_row
+    while at < row { y += GridRowHeight(at); at += 1 }
+    return y
 }
 
 // One grid square: a bordered box and its clipped text.

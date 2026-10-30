@@ -104,6 +104,11 @@ Info :: (bytes: *Vec(u8), book: *Engine.Workbook, sheet: s32) {
 // array per visible cell would spend the portable frame budget on decoding.
 View :: (bytes: *Vec(u8), book: *Engine.Workbook, sheet: s32, row: s32, col: s32) {
     BuilderPrint(bytes, "view\n")
+    for index: 0..31 {
+        row_index := cast(s32)index
+        unused VecPush(bytes.*, ifx Engine.WorkbookRowHidden(book, sheet, row + row_index) != 0 then cast(u8)49 else cast(u8)48)
+    }
+    BuilderPrint(bytes, "\n")
     if row < 0 || col < 0 || row > 16777184 || col > 16368 { return }
     for r: row..row + 31 {
         for c: col..col + 15 {
@@ -186,6 +191,9 @@ Call :: (context: *Context, files: *AppFiles, request: string) -> string {
         ok = Engine.WorkbookAddSheet(book, Engine.CText(value)) != null
     } else if op == "set" {
         result = Engine.WorkbookSetCell(book, sheet, row, col, Engine.CText(value))
+        ok = result != 0
+    } else if op == "set-rows-hidden" {
+        result = Engine.WorkbookSetRowsHidden(book, sheet, row, Number(request, "last"), Number(request, "hidden"))
         ok = result != 0
     } else if op == "copy" {
         result = Engine.WorkbookCopyCell(book, sheet, Number(request, "from_row"), Number(request, "from_col"), row, col)

@@ -5,9 +5,13 @@
 Engine :: #import "engine";
 
 Set :: (workbook: *Engine.Workbook, row: s32, col: s32, text: string) {
+    SetSheet(workbook, 0, row, col, text)
+}
+
+SetSheet :: (workbook: *Engine.Workbook, sheet: s32, row: s32, col: s32, text: string) {
     bytes: [256]u8
     SetText(bytes[:], text)
-    Engine.WorkbookSetCell(workbook, 0, row, col, cast(*s8)*bytes[0])
+    Engine.WorkbookSetCell(workbook, sheet, row, col, cast(*s8)*bytes[0])
 }
 
 Expect :: (workbook: *Engine.Workbook, row: s32, col: s32, expected: string) {
@@ -44,6 +48,28 @@ Relocated :: (workbook: *Engine.Workbook, formula: string, by_row: s32, by_col: 
         Fail("formula was not relocated")
     }
     RawFree(cast(*void)moved)
+}
+
+ExpectHidden :: (workbook: *Engine.Workbook, row: s32, expected: s32) {
+    actual: s32 = Engine.WorkbookRowHidden(workbook, 0, row)
+    if actual != expected {
+        Fail("hidden row state differs")
+    }
+}
+
+ExpectDisplay :: (workbook: *Engine.Workbook, sheet: s32, row: s32, col: s32, expected: string) {
+    output: [256]s8
+    Engine.WorkbookCellDisplay(workbook, sheet, row, col, *output[0], 256)
+    if Engine.TextCompareLiteral(*output[0], expected) != 0 {
+        SayWith("Expected: ", expected)
+        SayWith("Actual: ", TextFromCString(cast(*u8)*output[0]))
+        Fail("workbook display differs")
+    }
+}
+
+BackupReady :: () -> bool {
+    if PathExists("backup") { return true }
+    return MakeDirectory("backup")
 }
 
 #program_export
@@ -99,6 +125,131 @@ main :: () -> s32 {
     Check(Engine.FormulaFindRef(workbook, cast(*s8)*text[0], refs[0].end, *refs[0]) == 0, "a reference was found past the end")
 
     Engine.WorkbookFree(workbook)
+
+    hidden: *Engine.Workbook = Engine.WorkbookNew()
+    Engine.WorkbookAddSheet(hidden, Engine.CText("Sheet1"))
+    Check(Engine.WorkbookSetRowsHidden(hidden, 0, 4, 7, 1) != 0, "cannot hide rows")
+    ExpectHidden(hidden, 4, 1)
+    ExpectHidden(hidden, 7, 1)
+    ExpectHidden(hidden, 3, 0)
+    ExpectHidden(hidden, 8, 0)
+    Check(Engine.WorkbookRowHidden(hidden, -1, 4) == 0, "a bad sheet reported a hidden row")
+    Check(Engine.WorkbookSetRowsHidden(hidden, 0, 7, 4, 1) == 0, "a reversed row range was hidden")
+    Engine.WorkbookInsertRow(hidden, 0, 4)
+    ExpectHidden(hidden, 5, 1)
+    ExpectHidden(hidden, 6, 1)
+    ExpectHidden(hidden, 8, 1)
+    Engine.WorkbookDeleteRow(hidden, 0, 5)
+    ExpectHidden(hidden, 5, 1)
+    ExpectHidden(hidden, 7, 1)
+    Engine.WorkbookDeleteRow(hidden, 0, 6)
+    ExpectHidden(hidden, 5, 1)
+    ExpectHidden(hidden, 6, 1)
+    snapshot: *Engine.Workbook = Engine.WorkbookClone(hidden)
+    Check(snapshot != null, "hidden-row undo snapshot failed")
+    Check(Engine.WorkbookSetRowsHidden(hidden, 0, 5, 5, 0) != 0, "cannot show a row")
+    ExpectHidden(hidden, 5, 0)
+    ExpectHidden(snapshot, 5, 1)
+    ExpectHidden(hidden, 6, 1)
+
+    Check(BackupReady(), "cannot create the backup directory")
+    path: [128]u8
+    SetText(path[:], "backup/structure-hidden.gnumeric")
+    Check(Engine.WorkbookWriteGnumeric(snapshot, cast(*s8)*path[0]) != 0, "cannot write hidden rows")
+    xml: [65536]u8
+    length: s32 = ReadWholeFile(TextUntilNul(path[:]), xml[:])
+    Check(length > 0 && length < cast(s32)xml.count, "cannot read hidden-row XML")
+    if length > 0 && length < cast(s32)xml.count {
+        xml[length] = 0
+        Check(Engine.TextFindLiteral(cast(*s8)*xml[0], "Hidden=\"1\" Count=\"2\"") != null, "hidden rows were not written as a run")
+        reloaded: *Engine.Workbook = Engine.WorkbookNew()
+        Check(Engine.ParseGnumericXml(reloaded, cast(*s8)*xml[0]) != 0, "cannot parse hidden-row XML")
+        ExpectHidden(reloaded, 5, 1)
+        ExpectHidden(reloaded, 6, 1)
+        ExpectHidden(reloaded, 4, 0)
+        Engine.WorkbookFree(reloaded)
+    }
+    Check(RemoveFile(TextUntilNul(path[:])), "cannot remove hidden-row XML")
+    Engine.WorkbookFree(snapshot)
+    Engine.WorkbookFree(hidden)
+
+    subtotals: *Engine.Workbook = Engine.WorkbookNew()
+    Engine.WorkbookAddSheet(subtotals, Engine.CText("Sheet1"))
+    Engine.WorkbookAddSheet(subtotals, Engine.CText("Sheet2"))
+    Set(subtotals, 0, 0, "1")
+    Set(subtotals, 1, 0, "2")
+    Set(subtotals, 2, 0, "3")
+    Set(subtotals, 3, 0, "4")
+    Set(subtotals, 4, 0, "5")
+    Set(subtotals, 0, 1, "=SUBTOTAL(109,A1:A5)")
+    Set(subtotals, 1, 1, "=SUBTOTAL(9,A1:A5)")
+    Set(subtotals, 2, 1, "=SUBTOTAL(101,A1:A5)")
+    Set(subtotals, 3, 1, "=SUBTOTAL(102,A1:A5)")
+    Set(subtotals, 4, 1, "=SUBTOTAL(103,A1:A5)")
+    Set(subtotals, 5, 1, "=SUBTOTAL(104,A1:A5)")
+    Set(subtotals, 6, 1, "=SUBTOTAL(109,A1:A5,100)")
+    Set(subtotals, 0, 3, "1")
+    Set(subtotals, 0, 4, "10")
+    Set(subtotals, 1, 3, "2")
+    Set(subtotals, 1, 4, "20")
+    Set(subtotals, 2, 3, "3")
+    Set(subtotals, 2, 4, "30")
+    Set(subtotals, 7, 1, "=SUBTOTAL(109,D1:E3)")
+    SetSheet(subtotals, 1, 0, 0, "10")
+    SetSheet(subtotals, 1, 1, 0, "20")
+    SetSheet(subtotals, 1, 2, 0, "30")
+    Set(subtotals, 8, 1, "=SUBTOTAL(109,Sheet2!A1:A3)")
+    Set(subtotals, 9, 1, "=SUBTOTAL(109,A1:A2,D1:E1,Sheet2!A2)")
+    Engine.WorkbookEvaluate(subtotals)
+    ExpectDisplay(subtotals, 0, 0, 1, "15")
+    ExpectDisplay(subtotals, 0, 1, 1, "15")
+    ExpectDisplay(subtotals, 0, 2, 1, "3")
+    ExpectDisplay(subtotals, 0, 3, 1, "5")
+    ExpectDisplay(subtotals, 0, 4, 1, "5")
+    ExpectDisplay(subtotals, 0, 5, 1, "5")
+    ExpectDisplay(subtotals, 0, 6, 1, "115")
+    ExpectDisplay(subtotals, 0, 7, 1, "66")
+    ExpectDisplay(subtotals, 0, 8, 1, "60")
+    ExpectDisplay(subtotals, 0, 9, 1, "34")
+    Set(subtotals, 5, 0, "=SUBTOTAL(9,A1:A5)")
+    Set(subtotals, 10, 1, "=SUBTOTAL(109,A1:A6)")
+    Set(subtotals, 11, 1, "=SUBTOTAL(9,A1:A6)")
+    Set(subtotals, 12, 1, "=SUBTOTAL(109,Sheet2!A1:A3,A6)")
+    Set(subtotals, 13, 1, "=SUBTOTAL(103,C1:C1)")
+    Set(subtotals, 0, 2, "=\"SUBTOTAL(9,A1:A5)\"")
+    Engine.WorkbookEvaluate(subtotals)
+    ExpectDisplay(subtotals, 0, 10, 1, "15")
+    ExpectDisplay(subtotals, 0, 11, 1, "15")
+    ExpectDisplay(subtotals, 0, 12, 1, "60")
+    ExpectDisplay(subtotals, 0, 13, 1, "1")
+
+    Check(Engine.WorkbookSetRowsHidden(subtotals, 0, 0, 0, 1) != 0, "cannot hide the first subtotal row")
+    Check(Engine.WorkbookSetRowsHidden(subtotals, 0, 2, 2, 1) != 0, "cannot hide the third subtotal row")
+    Check(Engine.WorkbookSetRowsHidden(subtotals, 1, 1, 1, 1) != 0, "cannot hide a row on another sheet")
+    ExpectDisplay(subtotals, 0, 0, 1, "11")
+    ExpectDisplay(subtotals, 0, 1, 1, "15")
+    ExpectDisplay(subtotals, 0, 2, 1, "3.6666666666666665")
+    ExpectDisplay(subtotals, 0, 3, 1, "3")
+    ExpectDisplay(subtotals, 0, 4, 1, "3")
+    ExpectDisplay(subtotals, 0, 5, 1, "5")
+    ExpectDisplay(subtotals, 0, 6, 1, "111")
+    ExpectDisplay(subtotals, 0, 7, 1, "22")
+    ExpectDisplay(subtotals, 0, 8, 1, "40")
+    ExpectDisplay(subtotals, 0, 9, 1, "2")
+    ExpectDisplay(subtotals, 0, 10, 1, "11")
+    ExpectDisplay(subtotals, 0, 11, 1, "15")
+    ExpectDisplay(subtotals, 0, 12, 1, "40")
+
+    Check(Engine.WorkbookSetRowsHidden(subtotals, 0, 0, 0, 0) != 0, "cannot show the first subtotal row")
+    Check(Engine.WorkbookSetRowsHidden(subtotals, 0, 2, 2, 0) != 0, "cannot show the third subtotal row")
+    Check(Engine.WorkbookSetRowsHidden(subtotals, 1, 1, 1, 0) != 0, "cannot show a row on another sheet")
+    ExpectDisplay(subtotals, 0, 0, 1, "15")
+    ExpectDisplay(subtotals, 0, 2, 1, "3")
+    ExpectDisplay(subtotals, 0, 3, 1, "5")
+    ExpectDisplay(subtotals, 0, 7, 1, "66")
+    ExpectDisplay(subtotals, 0, 8, 1, "60")
+    ExpectDisplay(subtotals, 0, 9, 1, "34")
+    Engine.WorkbookFree(subtotals)
     Say("{\"workbook_structure\":\"ok\"}")
     return 0
 }

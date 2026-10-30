@@ -20,7 +20,7 @@ SOURCES := $(wildcard src/*.zi) ziran.toml ziran.lock
 # has the same layout.
 NATIVE_FLAGS := -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections
 
-.PHONY: build cell check run test test-ci structure-test conversion-test gnumeric-test desktop-test parity fuzz audit install deb clean
+.PHONY: build cell check run test test-ci structure-test conversion-test gnumeric-test desktop-test hidden-rows-test parity fuzz audit install deb clean
 
 build: $(APP) $(CELL)
 
@@ -62,6 +62,10 @@ audit: build/source_audit_test
 # stock CI runner lacks, so CI runs test-ci and the full gate is `make test`.
 desktop-test: build build/desktop_test
 	@env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u DBUS_SESSION_BUS_ADDRESS YUE_DESKTOP_RECOVERY=0 GSETTINGS_BACKEND=memory build/desktop_test
+
+# Focused behavior driver; uses its own Xvfb display and takes no screenshots.
+hidden-rows-test: build build/desktop_test
+	@env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY -u DBUS_SESSION_BUS_ADDRESS YUE_DESKTOP_RECOVERY=0 GSETTINGS_BACKEND=memory build/desktop_test --hidden-only
 
 test-ci: build service-test audit structure-test conversion-test gnumeric-test desktop-test
 
