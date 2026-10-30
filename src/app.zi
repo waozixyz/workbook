@@ -1490,7 +1490,7 @@ DrawGrid :: (session: Session, viewport: Rectangle) {
         while column < scroll_column + visible_columns && column < columns {
             display: [256]u8
             EditorCellDisplay(row, column, display[:])
-            // Imported cells already use Gnumeric's exact number format.
+            // Imported cells already apply the grid rule or their own number format.
             #if !#defined(KRYON_HOSTED_UI) {
                 if workbook.native == null { Engine.RoundForDisplay(cast(*s8)*display[0], 256) }
             }

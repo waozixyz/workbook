@@ -24,6 +24,8 @@
         <gnm:Cell Row="2" Col="3" ExprID="1"/>
         <gnm:Cell Row="3" Col="3">=SUM(D2:D3)</gnm:Cell>
         <gnm:Cell Row="4" Col="3">=Duration</gnm:Cell>
+        <gnm:Cell Row="5" Col="4" ValueType="40">1.1384905436975401</gnm:Cell>
+        <gnm:Cell Row="5" Col="5">=E6*-0.0001</gnm:Cell>
         <gnm:Cell Row="7" Col="0" Rows="2" Cols="1">=TRANSPOSE({1,2})</gnm:Cell>
         <gnm:Cell Row="100000" Col="300" ValueType="40">42</gnm:Cell>
       </gnm:Cells>

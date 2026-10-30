@@ -64,6 +64,10 @@ NativeFn_source :: #type (*void) -> *s8 #c_call;
 native_source: NativeFn_source;
 NativeFn_display :: #type (*void) -> *s8 #c_call;
 native_display: NativeFn_display;
+NativeFn_format :: #type (*void) -> *void #c_call;
+native_format: NativeFn_format;
+NativeFn_general :: #type (*void) -> s32 #c_call;
+native_general: NativeFn_general;
 NativeFn_value :: #type (*void) -> *void #c_call;
 native_value: NativeFn_value;
 NativeFn_value_type :: #type (*void) -> s32 #c_call;
@@ -159,6 +163,8 @@ NativeReady :: () -> bool {
         ok = ok && NativeResolve(cast(*void)*native_fetch, "sheet_cell_fetch")
         ok = ok && NativeResolve(cast(*void)*native_source, "gnm_cell_get_entered_text")
         ok = ok && NativeResolve(cast(*void)*native_display, "gnm_cell_get_rendered_text")
+        ok = ok && NativeResolve(cast(*void)*native_format, "gnm_cell_get_format")
+        ok = ok && NativeResolve(cast(*void)*native_general, "go_format_is_general")
         ok = ok && NativeResolve(cast(*void)*native_value, "gnm_cell_get_value")
         ok = ok && NativeResolve(cast(*void)*native_value_type, "value_type_of")
         ok = ok && NativeResolve(cast(*void)*native_number, "value_get_as_float")
@@ -381,6 +387,14 @@ NativeDisplay :: (wb: *Workbook, index: s32, row: s32, col: s32, out: *s8, cap: 
     sheet: *void = native_sheet(native_book(wb.native), index)
     cell: *void = native_cell(sheet, col, row)
     if cell == null { return }
+    // A number in the General format gets Workbook's grid rule rather than
+    // as many digits as fit the column; an explicit number format is kept.
+    value: *void = native_value(cell)
+    if native_value_type(value) == 40 && native_general(native_format(cell)) != 0 {
+        FormatNumber(native_number(value), out, cap)
+        RoundForDisplay(out, cap)
+        return
+    }
     text: *s8 = native_display(cell)
     if text != null {
         FormatText(out, cast(usize)cap, CText("%s"), text)
